@@ -14,13 +14,17 @@ from src.retrieval.store import delete_by_source, existing_sources, insert_chunk
 console = Console()
 
 
+def _is_ocr_cache(p: Path) -> bool:
+    return ".ocr" in p.parts
+
+
 def _iter_pdfs(year: int | None) -> list[Path]:
     root = settings.downloads_dir
     if not root.exists():
         return []
     if year is not None:
         return sorted((root / str(year)).glob("*.pdf"))
-    return sorted(root.glob("**/*.pdf"))
+    return sorted(p for p in root.glob("**/*.pdf") if not _is_ocr_cache(p))
 
 
 def _resolve_file(file: str) -> Path | None:
@@ -28,9 +32,11 @@ def _resolve_file(file: str) -> Path | None:
     if p.is_file():
         return p
     root = settings.downloads_dir
-    matches = list(root.glob(f"**/{file}"))
+    matches = [m for m in root.glob(f"**/{file}") if not _is_ocr_cache(m)]
     if not matches and not file.lower().endswith(".pdf"):
-        matches = list(root.glob(f"**/{file}.pdf"))
+        matches = [
+            m for m in root.glob(f"**/{file}.pdf") if not _is_ocr_cache(m)
+        ]
     if not matches:
         return None
     if len(matches) > 1:
@@ -43,14 +49,61 @@ def _resolve_file(file: str) -> Path | None:
     return matches[0]
 
 
-_MIN_TEXT_CHARS = 100
+def assess_text_quality(
+    chunks: list[dict], total_pages: int
+) -> tuple[bool, str]:
+    if not chunks:
+        return False, "no extractable text"
+    total_chars = sum(len(c["text"].strip()) for c in chunks)
+    if total_chars < settings.min_text_chars:
+        return False, f"only {total_chars} chars total"
+    if total_pages > 0:
+        pages_with_text = len({p for c in chunks for p in (c.get("pages") or [])})
+        chars_per_page = total_chars / total_pages
+        coverage = pages_with_text / total_pages
+        if chars_per_page < settings.min_chars_per_page:
+            return False, (
+                f"{chars_per_page:.0f} chars/page over {total_pages} pages "
+                f"(likely scanned)"
+            )
+        if coverage < settings.min_page_coverage:
+            return False, (
+                f"only {pages_with_text}/{total_pages} pages have text "
+                f"(likely scanned)"
+            )
+    return True, ""
+
+
+def _extract(pdf: Path) -> tuple[list[dict], int]:
+    doc = load_pdf(pdf)
+    chunks = [c for c in chunk_document(doc) if c["text"] and c["text"].strip()]
+    total_pages = len(getattr(doc, "pages", None) or {})
+    return chunks, total_pages
 
 
 def process_pdf(pdf: Path, force: bool = False) -> int:
-    doc = load_pdf(pdf)
-    chunks = [c for c in chunk_document(doc) if c["text"] and c["text"].strip()]
-    total_chars = sum(len(c["text"].strip()) for c in chunks)
-    if not chunks or total_chars < _MIN_TEXT_CHARS:
+    chunks, total_pages = _extract(pdf)
+    ok, reason = assess_text_quality(chunks, total_pages)
+    ocr_used = False
+
+    if not ok and settings.enable_ocr:
+        console.print(
+            f"[yellow]{pdf.name}: {reason} — running OCR "
+            f"(this can take a few minutes)...[/yellow]"
+        )
+        try:
+            from src.pdf.ocr import ensure_ocr
+
+            ocr_pdf = ensure_ocr(pdf)
+        except Exception as e:
+            console.print(f"[red]{pdf.name}: OCR failed: {e}[/red]")
+            return 0
+        chunks, total_pages = _extract(ocr_pdf)
+        ok, reason = assess_text_quality(chunks, total_pages)
+        ocr_used = True
+
+    if not ok:
+        console.print(f"[yellow]Skipping {pdf.name}: {reason}[/yellow]")
         return 0
 
     base_meta = metadata_from_path(pdf)
@@ -76,6 +129,7 @@ def process_pdf(pdf: Path, force: bool = False) -> int:
                     "pages": chunk["pages"],
                     "embedding_model": settings.openai_embedding_model,
                     "embedding_dim": settings.openai_embedding_dimension,
+                    "ocr_used": ocr_used,
                 },
             }
         )

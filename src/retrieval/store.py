@@ -16,12 +16,17 @@ def _read_client() -> Client:
     return create_client(settings.supabase_url, key)
 
 
+_INSERT_BATCH_SIZE = 50
+
+
 def insert_chunks(rows: list[dict]) -> None:
     if not rows:
         return
     client = _write_client()
-    for i in range(0, len(rows), 200):
-        client.table(settings.supabase_table).insert(rows[i : i + 200]).execute()
+    for i in range(0, len(rows), _INSERT_BATCH_SIZE):
+        client.table(settings.supabase_table).insert(
+            rows[i : i + _INSERT_BATCH_SIZE]
+        ).execute()
 
 
 def delete_by_source(source: str) -> None:

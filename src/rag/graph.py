@@ -79,4 +79,6 @@ def run_multi_agent_query(
         "rewritten_query": result.get("rewritten_query", query),
         "answer": result.get("answer", ""),
         "sources": result.get("sources", []),
+        "chunk_results": result.get("chunk_results", []),
+        "listing_results": result.get("listing_results", []),
     }

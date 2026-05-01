@@ -1,9 +1,10 @@
 # Greek Legislation RAG
 
-Single-agent Retrieval-Augmented Generation over Greek ΦΕΚ documents.
-Parses PDFs with **Docling**, embeds with **OpenAI** (`text-embedding-3-small`),
-stores vectors in **Supabase pgvector**, and answers questions with **GPT-5.1**
-using hybrid (semantic + full-text) retrieval.
+Multi-agent Retrieval-Augmented Generation over Greek ΦΕΚ documents.
+Parses PDFs with **Docling** (with **ocrmypdf + Tesseract** fallback for
+scanned FEKs), embeds with **OpenAI** (`text-embedding-3-small`), stores
+vectors in **Supabase pgvector**, and answers questions in Greek with
+**GPT-5.x** using hybrid (semantic + full-text) retrieval.
 
 ---
 
@@ -11,15 +12,22 @@ using hybrid (semantic + full-text) retrieval.
 
 ```
 PDF (downloads/YYYY/*.pdf)
-  └─► Docling DocumentConverter   (layout + tables + OCR fallback)
-        └─► Docling HybridChunker (heading-aware, token-capped)
-              └─► OpenAI embeddings (text-embedding-3-small, 1536d)
-                    └─► Supabase: documents (vector + tsvector + jsonb metadata)
+  └─► Docling DocumentConverter   (layout + tables; do_ocr=False)
+        └─► assess_text_quality   (chars / chars-per-page / page coverage)
+              ├─ pass → Docling HybridChunker
+              └─ fail → ocrmypdf + Tesseract (ell+eng), cached to downloads/.ocr/
+                       └─► re-extract → Docling HybridChunker
+                             └─► OpenAI embeddings (text-embedding-3-small, 1536d)
+                                   └─► Supabase: documents
+                                       (vector + accent-folded tsvector + jsonb)
 
-Query
-  └─► OpenAI embedding
-        └─► Supabase RPC: match_documents_hybrid (RRF: cosine + full-text)
-              └─► GPT-5.1 with retrieved context  →  cited answer
+Query (multi-agent LangGraph)
+  └─► RewriterAgent  — make follow-ups standalone, embed once
+        ├─► ChunkAgent    — hybrid retrieval (cosine + Greek-FTS via f_unaccent)
+        └─► ListingAgent  — structured intent (kind, number, year, FEK title) →
+                            scoped per-PDF hybrid retrieval
+              └─► CombinerAgent — fuse, dedupe, format with [n] citations,
+                                  validate citations against retrieved sources
 ```
 
 Per-document metadata is built from two sources:
@@ -33,10 +41,18 @@ Per-document metadata is built from two sources:
 ### 1. Supabase
 
 In the Supabase SQL editor, paste and run [`sql/001_init.sql`](sql/001_init.sql).
-This creates:
-- the `documents` table (`content`, `metadata jsonb`, `embedding vector(1536)`, `fts tsvector`)
-- HNSW index on the embedding, GIN indexes on `fts` and `metadata`
-- two RPC functions: `match_documents` (pure semantic) and `match_documents_hybrid` (RRF)
+This single bootstrap creates everything the app needs:
+- `vector` and `unaccent` extensions
+- `f_unaccent` IMMUTABLE wrapper (so the FTS column / index can use it)
+- `documents` table (`content`, `metadata jsonb`, `embedding vector(1536)`,
+  accent-folded `fts tsvector`)
+- HNSW index on the embedding, GIN on `fts` and `metadata`, btree on
+  `(metadata->>'source')` (used by `delete_by_source` during `--force` ingest)
+- two RPC functions: `match_documents` (pure semantic) and
+  `match_documents_hybrid` (RRF, accent-folded on both indexed text and query)
+- `alter role service_role set statement_timeout = '60s'` — **required on
+  free tier**, where the default 8s per-statement cap cancels bulk inserts of
+  OCR'd PDFs while the HNSW index updates
 
 ### 2. Environment
 
@@ -44,20 +60,18 @@ This creates:
 cp .env.example .env
 ```
 
-Fill in:
+`.env` holds **secrets and per-environment values only**. All tunables
+(model names, chunk size, retrieval weights, OCR thresholds, etc.) live in
+[`src/config.py`](src/config.py) as defaults; override them in `.env` only
+if a specific environment needs to.
 
 | Variable | Required | Notes |
 |---|---|---|
 | `OPENAI_API_KEY` | yes | sk-... |
 | `SUPABASE_URL` | yes | `https://<project>.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | yes | service-role key (writes) |
-| `OPENAI_CHAT_MODEL` | no | default `gpt-5.1` |
-| `OPENAI_EMBEDDING_MODEL` | no | default `text-embedding-3-small` |
-| `METADATA_LLM_MODEL` | no | default `gpt-4o-mini` |
-| `ENABLE_LLM_METADATA` | no | `true` / `false` |
-| `CHUNK_TOKENS` | no | default `512` |
-| `TOP_K` | no | default `10` |
-| `RRF_K` | no | default `50` |
+| `SUPABASE_ANON_KEY` | no | optional read-only key |
+| `CHECKPOINTER_DSN` | no | Postgres DSN for LangGraph multi-turn memory; falls back to in-memory |
 
 ### 3. Python
 
@@ -67,17 +81,107 @@ venv\Scripts\activate      # Windows
 pip install -r requirements.txt
 ```
 
-Docling will download its layout / OCR models on first run (a few hundred MB,
+Docling will download its layout models on first run (a few hundred MB,
 cached under `~/.cache/docling/`).
 
-> **Tesseract for scanned PDFs (optional).** Docling falls back to OCR only if
-> text extraction yields nothing. Install Tesseract and the Greek language pack
-> (`ell`) if your corpus contains scanned ΦΕΚ documents. For digital ΦΕΚs you
-> can skip this.
+### 4. OCR for scanned PDFs (recommended for the FEK corpus)
 
-### 4. PDFs
+Older FEK documents (and many gazette-signed PDFs) are **scans with only a
+form-field text layer** — docling extracts ~100 chars from a 40-page document
+and the chunk would be useless. The ingest pipeline detects this via three
+quality thresholds (`min_text_chars`, `min_chars_per_page`, `min_page_coverage`
+in `config.py`) and falls back to **`ocrmypdf` + Tesseract** with `ell+eng`
+language data. The OCR'd PDF is cached at `downloads/.ocr/<rel-path>.pdf`,
+so re-runs are free.
 
-Place your PDFs in year-keyed folders:
+Native text-layer PDFs that pass the thresholds skip OCR entirely — there's
+no speed cost for born-digital documents.
+
+#### Windows install
+
+You need three things on `PATH`: **Tesseract**, the **Greek language data
+files**, and **Ghostscript** (ocrmypdf needs Ghostscript for PDF
+rasterization). All free.
+
+```powershell
+# 1. Tesseract via winget (UAC prompt)
+winget install --id UB-Mannheim.TesseractOCR --exact --silent `
+    --accept-package-agreements --accept-source-agreements
+
+# 2. Greek language data (Modern + Ancient).
+#    `ell` is required (Modern Greek). `grc` is only needed to silence
+#    Tesseract's OSD step that requests it for orientation detection.
+$tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+Invoke-WebRequest `
+    -Uri "https://github.com/tesseract-ocr/tessdata_best/raw/main/ell.traineddata" `
+    -OutFile "$env:TEMP\ell.traineddata"
+Invoke-WebRequest `
+    -Uri "https://github.com/tesseract-ocr/tessdata_best/raw/main/grc.traineddata" `
+    -OutFile "$env:TEMP\grc.traineddata"
+# Elevated copy (UAC prompt) into Program Files\Tesseract-OCR\tessdata\
+Start-Process powershell -Verb RunAs -Wait -ArgumentList `
+    "-NoProfile","-Command", @"
+Copy-Item '$env:TEMP\ell.traineddata' '$tessdata\ell.traineddata' -Force
+Copy-Item '$env:TEMP\grc.traineddata' '$tessdata\grc.traineddata' -Force
+"@
+
+# 3. Ghostscript — not in winget; install from https://www.ghostscript.com/releases/gsdnld.html
+#    (AGPL 64-bit). Default path: C:\Program Files\gs\gs<version>\bin\gswin64c.exe
+
+# 4. Add both to user PATH (adjust the gs version folder to whatever you installed)
+[Environment]::SetEnvironmentVariable(
+    "PATH",
+    "C:\Program Files\Tesseract-OCR;C:\Program Files\gs\gs10.07.0\bin;" +
+        [Environment]::GetEnvironmentVariable("PATH","User"),
+    "User"
+)
+```
+
+**Open a new PowerShell window** (PATH is read at shell startup), then verify:
+
+```powershell
+tesseract --list-langs   # should include ell, eng, grc, osd
+gswin64c --version       # should print a version like 10.07.0
+```
+
+#### Sanity check on a single PDF
+
+The `diagnose` subcommand runs the full extraction pipeline on one file and
+prints metrics for both the native pass and the OCR pass — without writing
+to the DB. Use this to confirm OCR works on your corpus before backfilling:
+
+```bash
+python -m src.main diagnose 20220100089.pdf
+# (resolves filename anywhere under downloads/, skipping the .ocr cache)
+```
+
+Look for `chars/page` to jump from <300 (native, scan) to ~2000+ (OCR), and
+`status: PASS` on the After-OCR table.
+
+#### Linux / macOS
+
+```bash
+# Debian/Ubuntu
+sudo apt install tesseract-ocr tesseract-ocr-ell tesseract-ocr-grc ghostscript
+
+# macOS (Homebrew)
+brew install tesseract tesseract-lang ghostscript
+```
+
+Then `tesseract --list-langs` should include `ell`. No PATH tweaks needed.
+
+### 5. PDFs
+
+> **Run the scraper first.** This repo expects the `downloads/` folder to
+> already contain ΦΕΚ PDFs. It does **not** fetch them itself — ingest will
+> simply report "No PDFs found." on an empty tree.
+
+Populate `downloads/` by cloning and running the companion scraper
+[**GreekLegislationScrapper**](https://github.com/supernlogn/GreekLegislationScrapper)
+**before** the first `ingest` run. The scraper downloads ΦΕΚ documents from
+the official Greek government gazette and writes them into year-keyed folders
+alongside per-year `listing-items-YYYY.md` manifests (used by `ListingAgent`
+for structured-intent retrieval):
 
 ```
 downloads/
@@ -85,7 +189,8 @@ downloads/
 ├── 2023/  *.pdf
 ├── 2024/  *.pdf
 ├── 2025/  *.pdf
-└── 2026/  *.pdf
+├── 2026/  *.pdf
+└── listing-items-YYYY.md   # one per year, parsed by ListingAgent
 ```
 
 Filenames follow the `YYYYDDDNNNN.pdf` convention so `year`, `fek_series_code`
@@ -133,34 +238,23 @@ python -m src.main query --interactive
 The output shows the answer (with `[n]` citations) and a sources table with
 filename, year, page, semantic similarity, and RRF rank.
 
+### Diagnose
+
+Run the extraction pipeline on a single PDF without writing to the DB. Prints
+character counts, page coverage, Greek vs. Latin char ratio, and the first 600
+chars of extracted text. Runs both the native pass and the OCR fallback so you
+can compare.
+
+```bash
+python -m src.main diagnose 20220100089.pdf
+python -m src.main diagnose 20220100089.pdf --no-ocr   # native only
+```
+
 ### Stats / reset
 
 ```bash
 python -m src.main stats   # chunk count, distinct PDFs, breakdown by year
 python -m src.main reset   # DESTRUCTIVE: truncates the documents table
-```
-
----
-
-## Project layout
-
-```
-.
-├── sql/001_init.sql          # Supabase bootstrap (run once)
-├── requirements.txt
-├── .env.example
-├── downloads/                # your PDFs, organized by year
-└── src/
-    ├── config.py             # pydantic-settings (.env)
-    ├── main.py               # Click CLI
-    ├── pdf/docling_loader.py # DocumentConverter wrapper
-    ├── ingestion/
-    │   ├── chunker.py        # HybridChunker + tiktoken
-    │   ├── metadata.py       # filename parser + LLM enrichment
-    │   ├── embedder.py       # batched OpenAI embeddings (tenacity retry)
-    │   └── ingest.py         # walk → parse → chunk → embed → upsert
-    ├── retrieval/store.py    # Supabase client, hybrid RPC
-    └── rag/agent.py          # embed → hybrid retrieve → generate
 ```
 
 ---
@@ -181,26 +275,3 @@ numbers and other exact tokens. If recall on Greek keywords feels weak,
 install Postgres `unaccent` and wrap `content` / queries with `unaccent(...)`.
 
 ---
-
-## Cost notes
-
-For 422 PDFs, rough one-time cost:
-- **Embeddings** (`text-embedding-3-small`): a few cents — large docs but a small model.
-- **Metadata enrichment** (`gpt-4o-mini`, optional, one call per PDF): ~\$0.10–\$0.40 total.
-- **Docling**: free (local models).
-- **Per query**: one embedding (cents per thousand) + one GPT-5.1 chat with
-  ~10 chunks of context.
-
-Set `ENABLE_LLM_METADATA=false` to skip the per-doc enrichment call entirely.
-
----
-
-## Troubleshooting
-
-| Symptom | Likely cause / fix |
-|---|---|
-| `ModuleNotFoundError: docling_core.transforms.chunker.tokenizer.openai` | Docling version mismatch — `pip install -U docling docling-core`. |
-| First ingest is slow | Docling is downloading layout/OCR models. Subsequent runs use the cache. |
-| `match_documents_hybrid` not found | The SQL script wasn't run, or it ran on a different schema. Re-run in the right project. |
-| Empty `pages` in metadata | Docling didn't produce per-item provenance for that chunk; the chunk still works for retrieval. |
-| `permission denied for table documents` | You're using the anon key. Use the **service role** key for ingest. |

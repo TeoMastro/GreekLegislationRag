@@ -26,6 +26,12 @@ class Settings(BaseSettings):
 
     downloads_dir: Path = Path("downloads")
 
+    enable_ocr: bool = True
+    ocr_languages: str = "ell+eng"
+    min_text_chars: int = 500
+    min_chars_per_page: int = 200
+    min_page_coverage: float = 0.5
+
     chunk_tokens: int = 512
 
     top_k: int = 10

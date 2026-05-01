@@ -1,19 +1,38 @@
 -- ============================================================
--- Greek Legislation RAG — Supabase init
--- Run in Supabase SQL editor.
+-- Greek Legislation RAG — Supabase bootstrap (run once)
+-- Run in the Supabase SQL editor on a fresh project.
 -- ============================================================
 
+-- ------------------------------------------------------------
+-- Extensions
+-- ------------------------------------------------------------
 create extension if not exists vector;
+create extension if not exists unaccent;
+
+-- public.unaccent() is STABLE, which prevents its use inside generated
+-- columns or expression indexes. Wrap it as IMMUTABLE so the FTS
+-- column and indexes can be built on top of it.
+create or replace function f_unaccent(text)
+returns text
+language sql
+immutable
+parallel safe
+strict
+as $$
+    select public.unaccent('public.unaccent', $1)
+$$;
 
 -- ------------------------------------------------------------
--- Chunks table
+-- Chunks table — content + 1536-d embedding + accent-folded FTS
 -- ------------------------------------------------------------
 create table if not exists documents (
     id          bigserial primary key,
     content     text not null,
     metadata    jsonb not null default '{}'::jsonb,
     embedding   vector(1536),
-    fts         tsvector generated always as (to_tsvector('simple', content)) stored,
+    fts         tsvector generated always as (
+                    to_tsvector('simple', f_unaccent(content))
+                ) stored,
     created_at  timestamptz not null default now()
 );
 
@@ -57,7 +76,8 @@ as $$
 $$;
 
 -- ------------------------------------------------------------
--- Hybrid match (RRF: semantic + full-text)
+-- Hybrid match (RRF: semantic + full-text), accent-folded on both sides
+-- so inflected Greek forms hit the full-text leg.
 -- ------------------------------------------------------------
 create or replace function match_documents_hybrid (
     query_text          text,
@@ -80,10 +100,13 @@ as $$
 with full_text as (
     select id,
            row_number() over (
-               order by ts_rank_cd(fts, websearch_to_tsquery('simple', query_text)) desc
+               order by ts_rank_cd(
+                   fts,
+                   websearch_to_tsquery('simple', f_unaccent(query_text))
+               ) desc
            ) as rank_ix
     from documents
-    where fts @@ websearch_to_tsquery('simple', query_text)
+    where fts @@ websearch_to_tsquery('simple', f_unaccent(query_text))
       and metadata @> filter
     limit least(match_count * 2, 50)
 ),
@@ -106,3 +129,11 @@ join documents d on d.id = coalesce(ft.id, s.id)
 order by rank desc
 limit match_count;
 $$;
+
+-- ------------------------------------------------------------
+-- Role config
+-- Required on Supabase free tier: the default 8s per-statement
+-- timeout cancels bulk inserts of OCR'd PDFs (180+ chunks of
+-- vector(1536)) while the HNSW index updates.
+-- ------------------------------------------------------------
+alter role service_role set statement_timeout = '60s';

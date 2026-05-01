@@ -1,6 +1,17 @@
+import sys
 import uuid
 
 import click
+
+
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure") and (
+        not _stream.encoding or _stream.encoding.lower() != "utf-8"
+    ):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -81,6 +92,13 @@ def _print_answer(result: dict) -> None:
     if rewritten and rewritten != result.get("query"):
         console.print(f"[dim]Rewritten query: {rewritten}[/dim]")
 
+    chunk_n = len(result.get("chunk_results") or [])
+    listing_n = len(result.get("listing_results") or [])
+    console.print(
+        f"[dim]Agents: rewriter ✓ | chunk ({chunk_n} hits) | "
+        f"listing ({listing_n} hits) | combiner ✓[/dim]"
+    )
+
     sources = result.get("sources") or []
     if not sources:
         return
@@ -123,6 +141,16 @@ def stats() -> None:
         for y in sorted(by_year):
             t.add_row(y, str(by_year[y]))
         console.print(t)
+
+
+@cli.command()
+@click.argument("file", type=str)
+@click.option("--no-ocr", is_flag=True, help="Skip the OCR fallback step.")
+def diagnose(file: str, no_ocr: bool) -> None:
+    """Run text-extraction diagnostics on a PDF (native + OCR)."""
+    from src.ingestion.diagnose import diagnose_pdf
+
+    raise SystemExit(diagnose_pdf(file, run_ocr=not no_ocr))
 
 
 @cli.command()
