@@ -1,0 +1,18 @@
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Docling model cache
+.cache/
+~/.cache/docling/
+
+# Local data
+downloads/
+*.log
