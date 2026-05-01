@@ -27,6 +27,7 @@ class SupabaseHybridRetriever(BaseRetriever):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     k: int | None = None
+    filter: dict[str, Any] | None = None
 
     def retrieve_with_embedding(
         self,
@@ -35,11 +36,13 @@ class SupabaseHybridRetriever(BaseRetriever):
         k: int | None = None,
         filter: dict[str, Any] | None = None,
     ) -> list[Document]:
+        if filter is None:
+            filter = self.filter or {}
         rows = hybrid_search(
             query_text=query,
             query_embedding=query_embedding,
             match_count=k or self.k or settings.top_k,
-            filter=filter or {},
+            filter=filter,
         )
         return [dict_to_document(r) for r in rows]
 
@@ -52,4 +55,6 @@ class SupabaseHybridRetriever(BaseRetriever):
         embeddings = embed_texts([query])
         if not embeddings:
             return []
-        return self.retrieve_with_embedding(query, embeddings[0])
+        return self.retrieve_with_embedding(
+            query, embeddings[0], k=self.k, filter=self.filter
+        )
