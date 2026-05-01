@@ -8,7 +8,7 @@ from src.pdf.docling_loader import load_pdf
 from src.ingestion.chunker import chunk_document
 from src.ingestion.metadata import metadata_from_path, enrich_with_llm
 from src.ingestion.embedder import embed_texts
-from src.retrieval.store import existing_sources, insert_chunks
+from src.retrieval.store import delete_by_source, existing_sources, insert_chunks
 
 
 console = Console()
@@ -46,7 +46,7 @@ def _resolve_file(file: str) -> Path | None:
 _MIN_TEXT_CHARS = 100
 
 
-def process_pdf(pdf: Path) -> int:
+def process_pdf(pdf: Path, force: bool = False) -> int:
     doc = load_pdf(pdf)
     chunks = [c for c in chunk_document(doc) if c["text"] and c["text"].strip()]
     total_chars = sum(len(c["text"].strip()) for c in chunks)
@@ -56,7 +56,7 @@ def process_pdf(pdf: Path) -> int:
     base_meta = metadata_from_path(pdf)
     full_text = "\n\n".join(c["text"] for c in chunks[:5])
     llm_meta = enrich_with_llm(full_text)
-    doc_meta = {**base_meta, **llm_meta}
+    doc_meta = {**llm_meta, **base_meta}
 
     texts = [c["text"] for c in chunks]
     embeddings = embed_texts(texts)
@@ -74,9 +74,13 @@ def process_pdf(pdf: Path) -> int:
                     "total_chunks": total,
                     "headings": chunk["headings"],
                     "pages": chunk["pages"],
+                    "embedding_model": settings.openai_embedding_model,
+                    "embedding_dim": settings.openai_embedding_dimension,
                 },
             }
         )
+    if force:
+        delete_by_source(pdf.name)
     insert_chunks(rows)
     return len(rows)
 
@@ -126,7 +130,7 @@ def ingest(
         for pdf in pending:
             progress.update(task, description=f"Ingesting {pdf.name}")
             try:
-                n = process_pdf(pdf)
+                n = process_pdf(pdf, force=force)
                 if n == 0:
                     no_text.append(pdf)
                 else:

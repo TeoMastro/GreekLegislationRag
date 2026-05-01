@@ -24,6 +24,13 @@ def insert_chunks(rows: list[dict]) -> None:
         client.table(settings.supabase_table).insert(rows[i : i + 200]).execute()
 
 
+def delete_by_source(source: str) -> None:
+    client = _write_client()
+    client.table(settings.supabase_table).delete().eq(
+        "metadata->>source", source
+    ).execute()
+
+
 def existing_sources() -> set[str]:
     client = _read_client()
     sources: set[str] = set()
