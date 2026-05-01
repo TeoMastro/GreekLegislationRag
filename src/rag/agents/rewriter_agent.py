@@ -69,12 +69,30 @@ class RewriterAgent(BaseAgent):
                 )
                 rewritten = query
 
-        embeddings = embed_texts([rewritten])
+        try:
+            embeddings = embed_texts([rewritten])
+        except Exception as e:
+            _console.print(
+                f"[red]RewriterAgent embedding call failed:[/red] {e}"
+            )
+            return {
+                "rewritten_query": rewritten,
+                "query_embedding": [],
+                "embedding_error": str(e) or type(e).__name__,
+            }
+
         embedding = embeddings[0] if embeddings else []
+        if not embedding:
+            return {
+                "rewritten_query": rewritten,
+                "query_embedding": [],
+                "embedding_error": "embedding service returned empty vector",
+            }
 
         return {
             "rewritten_query": rewritten,
             "query_embedding": embedding,
+            "embedding_error": None,
         }
 
 

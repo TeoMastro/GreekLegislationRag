@@ -18,6 +18,8 @@ class RAGState(TypedDict, total=False):
     answer: str
     sources: list[Document]
 
+    embedding_error: str | None
+
     messages: Annotated[list[BaseMessage], add_messages]
 
 
@@ -36,5 +38,6 @@ def create_initial_state(
         listing_results=[],
         answer="",
         sources=[],
+        embedding_error=None,
         messages=[],
     )

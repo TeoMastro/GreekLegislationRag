@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -8,6 +9,20 @@ from rich.console import Console
 
 from src.config import settings
 from src.rag.agents.base_agent import BaseAgent
+
+
+_CITATION_RE = re.compile(r"\[(\d+)\]")
+
+
+def _strip_invalid_citations(answer: str, num_sources: int) -> str:
+    def repl(m: re.Match[str]) -> str:
+        n = int(m.group(1))
+        if 1 <= n <= num_sources:
+            return m.group(0)
+        return ""
+
+    cleaned = _CITATION_RE.sub(repl, answer)
+    return re.sub(r"[ \t]+([,.;:!?])", r"\1", cleaned)
 
 
 _console = Console()
@@ -91,6 +106,18 @@ class CombinerAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> dict[str, Any]:
+        if state.get("embedding_error"):
+            answer = (
+                "Η υπηρεσία ενσωματώσεων (embeddings) δεν είναι διαθέσιμη αυτή τη "
+                "στιγμή, οπότε δεν ήταν δυνατή η ανάκτηση αποσπασμάτων. "
+                "Δοκιμάστε ξανά σε λίγο."
+            )
+            return {
+                "answer": answer,
+                "sources": [],
+                "messages": [AIMessage(content=answer)],
+            }
+
         query = state.get("rewritten_query") or state["query"]
         chunk_results = state.get("chunk_results") or []
         listing_results = state.get("listing_results") or []
@@ -104,7 +131,8 @@ class CombinerAgent(BaseAgent):
                 "messages": [AIMessage(content=answer)],
             }
 
-        top = fused[: settings.top_k]
+        limit = state.get("top_k") or settings.top_k
+        top = fused[:limit]
         context = _format_context(top)
         user_msg = f"Ερώτηση:\n{query}\n\nΑποσπάσματα ΦΕΚ:\n{context}"
 
@@ -119,6 +147,8 @@ class CombinerAgent(BaseAgent):
         except Exception as e:
             _console.print(f"[red]CombinerAgent LLM call failed:[/red] {e}")
             raise
+
+        answer_text = _strip_invalid_citations(answer_text, len(top))
 
         return {
             "answer": answer_text,

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str
-    openai_chat_model: str = "gpt-5.1"
+    openai_chat_model: str = "gpt-5.4"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimension: int = 1536
 
