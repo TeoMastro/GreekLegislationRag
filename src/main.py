@@ -74,9 +74,15 @@ def query(
                 break
             if not q:
                 break
-            _print_answer(
-                run_multi_agent_query(q, session_id=sid, year=year, top_k=top_k)
-            )
+            try:
+                _print_answer(
+                    run_multi_agent_query(q, session_id=sid, year=year, top_k=top_k)
+                )
+            except Exception as e:
+                console.print(
+                    f"[red]Query failed:[/red] {type(e).__name__}: {e}\n"
+                    "[dim]Session preserved — try again.[/dim]"
+                )
         return
 
     if not question:

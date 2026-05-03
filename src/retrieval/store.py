@@ -1,5 +1,7 @@
+import time
 from functools import lru_cache
 
+import httpx
 from supabase import Client, create_client
 
 from src.config import settings
@@ -14,6 +16,16 @@ def _write_client() -> Client:
 def _read_client() -> Client:
     key = settings.supabase_anon_key or settings.supabase_service_key
     return create_client(settings.supabase_url, key)
+
+
+_TRANSIENT_HTTP_ERRORS = (
+    httpx.RemoteProtocolError,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.PoolTimeout,
+)
 
 
 _INSERT_BATCH_SIZE = 50
@@ -67,20 +79,26 @@ def hybrid_search(
     match_count: int | None = None,
     filter: dict | None = None,
 ) -> list[dict]:
-    client = _read_client()
-    resp = client.rpc(
-        "match_documents_hybrid",
-        {
-            "query_text": query_text,
-            "query_embedding": query_embedding,
-            "match_count": match_count or settings.top_k,
-            "full_text_weight": settings.hybrid_full_text_weight,
-            "semantic_weight": settings.hybrid_semantic_weight,
-            "rrf_k": settings.rrf_k,
-            "filter": filter or {},
-        },
-    ).execute()
-    return resp.data or []
+    params = {
+        "query_text": query_text,
+        "query_embedding": query_embedding,
+        "match_count": match_count or settings.top_k,
+        "full_text_weight": settings.hybrid_full_text_weight,
+        "semantic_weight": settings.hybrid_semantic_weight,
+        "rrf_k": settings.rrf_k,
+        "filter": filter or {},
+    }
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = _read_client().rpc("match_documents_hybrid", params).execute()
+            return resp.data or []
+        except _TRANSIENT_HTTP_ERRORS:
+            _read_client.cache_clear()
+            if attempt == max_attempts:
+                raise
+            time.sleep(0.5 * attempt)
+    return []
 
 
 def count_chunks() -> int:
