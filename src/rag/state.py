@@ -14,6 +14,7 @@ class RAGState(TypedDict, total=False):
 
     chunk_results: list[Document]
     listing_results: list[Document]
+    relation_results: list[Document]
 
     answer: str
     sources: list[Document]
@@ -36,6 +37,7 @@ def create_initial_state(
         top_k=top_k,
         chunk_results=[],
         listing_results=[],
+        relation_results=[],
         answer="",
         sources=[],
         embedding_error=None,

@@ -100,9 +100,11 @@ def _print_answer(result: dict) -> None:
 
     chunk_n = len(result.get("chunk_results") or [])
     listing_n = len(result.get("listing_results") or [])
+    relation_n = len(result.get("relation_results") or [])
     console.print(
         f"[dim]Agents: rewriter ✓ | chunk ({chunk_n} hits) | "
-        f"listing ({listing_n} hits) | combiner ✓[/dim]"
+        f"listing ({listing_n} hits) | relation ({relation_n} hits) | "
+        f"combiner ✓[/dim]"
     )
 
     sources = result.get("sources") or []
@@ -170,6 +172,43 @@ def reset() -> None:
         return
     delete_all_chunks()
     console.print("[green]All chunks deleted.[/green]")
+
+
+@cli.command("sync-law-nodes")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-upsert every row, even if its canonical_key already exists.",
+)
+def sync_law_nodes_cmd(force: bool) -> None:
+    """Upsert law_nodes from downloads/listing-items-YYYY.md.
+
+    Skips listings whose canonical_key is already in law_nodes (one batched
+    SELECT vs. one HTTP call per row). Use --force after editing a listing
+    file so the change propagates.
+    """
+    from src.citations.backfill import sync_law_nodes
+
+    sync_law_nodes(force=force)
+
+
+@cli.command("extract-citations")
+@click.option("--year", type=int, default=None, help="Restrict to one year of source PDFs.")
+@click.option("--file", "file", type=str, default=None, help="Single source PDF basename (e.g. 20240100207.pdf).")
+@click.option(
+    "--reprocess",
+    is_flag=True,
+    help="Re-extract chunks that already have citations (default: skip).",
+)
+def extract_citations_cmd(year: int | None, file: str | None, reprocess: bool) -> None:
+    """Run the regex+LLM citation extractor over ingested chunks."""
+    from src.citations.backfill import extract_citations
+
+    extract_citations(
+        year=year,
+        source=file,
+        skip_already_processed=not reprocess,
+    )
 
 
 if __name__ == "__main__":

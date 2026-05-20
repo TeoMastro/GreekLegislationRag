@@ -32,8 +32,16 @@ _SYSTEM_PROMPT = (
     "Είσαι βοηθός για την ελληνική νομοθεσία. Απαντάς ΜΟΝΟ με βάση τα παρακάτω "
     "αποσπάσματα ΦΕΚ. Παρέθεσε αναφορές με τη μορφή [n] όπου n είναι ο αριθμός "
     "της πηγής. Αν δεν υπάρχει αρκετή πληροφορία στα αποσπάσματα, πες το ρητά "
-    "αντί να μαντέψεις."
+    "αντί να μαντέψεις. Όταν ένα απόσπασμα φέρει σημείωση «Σχέση γράφου», "
+    "χρησιμοποίησέ την για να διατυπώσεις τη σχέση μεταξύ νόμων ρητά "
+    "(π.χ. «ο Ν. X/Y τροποποιεί το άρθρο Z του Ν. A/B»)."
 )
+
+
+# Bonus added to rank score for graph-derived hits so they don't sink under
+# semantic/full-text results that score on lexical similarity rather than
+# the explicit relation the user asked about.
+_RELATION_RANK_BOOST = 1.0
 
 
 def _doc_key(d: Document) -> tuple:
@@ -46,14 +54,32 @@ def _doc_key(d: Document) -> tuple:
 
 def _rank_score(d: Document) -> float:
     try:
-        return float((d.metadata or {}).get("rank") or 0.0)
+        base = float((d.metadata or {}).get("rank") or 0.0)
     except (TypeError, ValueError):
-        return 0.0
+        base = 0.0
+    if (d.metadata or {}).get("_relation_match"):
+        # Relation matches are answering exactly the question type we boosted
+        # for; weight them by classifier confidence so high-confidence edges
+        # outrank lower-confidence ones.
+        rel = d.metadata["_relation_match"]
+        try:
+            conf = float(rel.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        base += _RELATION_RANK_BOOST + conf
+    return base
+
+
+def _merge_meta(existing: Document, addition_key: str, addition: dict) -> Document:
+    merged = dict(existing.metadata or {})
+    merged[addition_key] = addition
+    return Document(page_content=existing.page_content, metadata=merged)
 
 
 def _fuse(
     chunk_results: list[Document],
     listing_results: list[Document],
+    relation_results: list[Document],
 ) -> list[Document]:
     chosen: dict[tuple, Document] = {}
 
@@ -69,9 +95,16 @@ def _fuse(
             continue
         existing = chosen[key]
         if "_listing_match" in d.metadata and "_listing_match" not in existing.metadata:
-            merged_meta = dict(existing.metadata)
-            merged_meta["_listing_match"] = d.metadata["_listing_match"]
-            chosen[key] = Document(page_content=existing.page_content, metadata=merged_meta)
+            chosen[key] = _merge_meta(existing, "_listing_match", d.metadata["_listing_match"])
+
+    for d in relation_results:
+        key = _doc_key(d)
+        if key not in chosen:
+            chosen[key] = d
+            continue
+        existing = chosen[key]
+        if "_relation_match" in d.metadata and "_relation_match" not in existing.metadata:
+            chosen[key] = _merge_meta(existing, "_relation_match", d.metadata["_relation_match"])
 
     return sorted(chosen.values(), key=_rank_score, reverse=True)
 
@@ -85,6 +118,7 @@ def _format_context(sources: list[Document]) -> str:
         page_str = f", σ. {pages[0]}" if pages else ""
         title = meta.get("title")
         listing = meta.get("_listing_match") or {}
+        relation = meta.get("_relation_match") or {}
         header = f"[{i}] {filename}{page_str}"
         if title:
             header += f" — {title}"
@@ -92,7 +126,17 @@ def _format_context(sources: list[Document]) -> str:
             header += f" — {listing['description'][:120]}"
         if listing.get("fek_title"):
             header += f" (ΦΕΚ {listing['fek_title']})"
-        lines.append(f"{header}\n{src.page_content}")
+        body = src.page_content
+        if relation:
+            article = relation.get("target_article")
+            article_str = f" άρθρο {article}" if article else ""
+            note = (
+                f"Σχέση γράφου: {relation.get('source_law')} "
+                f"{relation.get('relation')} {relation.get('target_law')}{article_str} "
+                f"(εμπιστοσύνη {float(relation.get('confidence') or 0.0):.2f})"
+            )
+            body = f"{note}\n{body}"
+        lines.append(f"{header}\n{body}")
     return "\n\n---\n\n".join(lines)
 
 
@@ -121,8 +165,9 @@ class CombinerAgent(BaseAgent):
         query = state.get("rewritten_query") or state["query"]
         chunk_results = state.get("chunk_results") or []
         listing_results = state.get("listing_results") or []
+        relation_results = state.get("relation_results") or []
 
-        fused = _fuse(chunk_results, listing_results)
+        fused = _fuse(chunk_results, listing_results, relation_results)
         if not fused:
             answer = "Δεν βρέθηκαν σχετικά αποσπάσματα στη βάση."
             return {

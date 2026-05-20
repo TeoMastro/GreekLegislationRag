@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     rewriter_llm_model: str = "gpt-5.4-mini"
     enable_query_rewriter: bool = True
 
+    enable_citation_extraction: bool = True
+    citation_llm_model: str = "gpt-5.4-mini"
+    citation_min_confidence: float = 0.5
+    relation_top_k: int = 20
+
     checkpointer_dsn: str | None = None
 
 

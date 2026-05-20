@@ -135,7 +135,22 @@ def process_pdf(pdf: Path, force: bool = False) -> int:
         )
     if force:
         delete_by_source(pdf.name)
-    insert_chunks(rows)
+    inserted_ids = insert_chunks(rows)
+
+    if settings.enable_citation_extraction and inserted_ids:
+        try:
+            from src.citations.backfill import extract_for_chunks
+
+            extract_for_chunks(
+                pdf.name,
+                list(zip(inserted_ids, [c["text"] for c in chunks])),
+            )
+        except Exception as e:
+            console.print(
+                f"[yellow]{pdf.name}: citation extraction failed (chunks "
+                f"still ingested): {e}[/yellow]"
+            )
+
     return len(rows)
 
 

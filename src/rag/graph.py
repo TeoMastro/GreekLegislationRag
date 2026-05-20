@@ -9,6 +9,7 @@ from src.config import settings
 from src.rag.agents.chunk_agent import get_chunk_agent
 from src.rag.agents.combiner_agent import get_combiner_agent
 from src.rag.agents.listing_agent import get_listing_agent
+from src.rag.agents.relation_agent import get_relation_agent
 from src.rag.agents.rewriter_agent import get_rewriter_agent
 from src.rag.state import RAGState, create_initial_state
 
@@ -45,13 +46,16 @@ def get_graph():
     workflow.add_node("rewriter", get_rewriter_agent().execute)
     workflow.add_node("chunk", get_chunk_agent().execute)
     workflow.add_node("listing", get_listing_agent().execute)
+    workflow.add_node("relation", get_relation_agent().execute)
     workflow.add_node("combiner", get_combiner_agent().execute)
 
     workflow.add_edge(START, "rewriter")
     workflow.add_edge("rewriter", "chunk")
     workflow.add_edge("rewriter", "listing")
+    workflow.add_edge("rewriter", "relation")
     workflow.add_edge("chunk", "combiner")
     workflow.add_edge("listing", "combiner")
+    workflow.add_edge("relation", "combiner")
     workflow.add_edge("combiner", END)
 
     checkpointer = _build_checkpointer()
@@ -81,4 +85,5 @@ def run_multi_agent_query(
         "sources": result.get("sources", []),
         "chunk_results": result.get("chunk_results", []),
         "listing_results": result.get("listing_results", []),
+        "relation_results": result.get("relation_results", []),
     }
