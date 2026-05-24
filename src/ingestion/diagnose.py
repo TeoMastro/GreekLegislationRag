@@ -39,6 +39,12 @@ def _resolve_pdf(arg: str) -> Path | None:
 
 def _report(label: str, pdf: Path) -> bool:
     chunks, total_pages = _extract(pdf)
+    return _report_chunks(label, pdf.name, chunks, total_pages)
+
+
+def _report_chunks(
+    label: str, name: str, chunks: list[dict], total_pages: int
+) -> bool:
     total_chars = sum(len(c["text"].strip()) for c in chunks)
     pages_with_text = len({p for c in chunks for p in (c.get("pages") or [])})
     full_text = "\n".join(c["text"] for c in chunks)
@@ -47,7 +53,7 @@ def _report(label: str, pdf: Path) -> bool:
     latin = _latin_count(full_text)
     ok, reason = assess_text_quality(chunks, total_pages)
 
-    table = Table(title=f"{label}: {pdf.name}")
+    table = Table(title=f"{label}: {name}")
     table.add_column("Metric")
     table.add_column("Value")
     table.add_row(
@@ -91,14 +97,19 @@ def diagnose_pdf(arg: str, run_ocr: bool = True) -> int:
         _console.print("[green]Native extraction passed; skipping OCR.[/green]")
         return 0
 
-    _console.print("\n[bold]Running OCR via ocrmypdf...[/bold]\n")
+    _console.print(f"\n[bold]Running OCR via {settings.ocr_engine}...[/bold]\n")
     try:
-        from src.pdf.ocr import ensure_ocr
+        if settings.ocr_engine == "mistral":
+            from src.pdf.mistral_ocr import ocr_pdf_to_chunks
 
-        ocr_pdf = ensure_ocr(pdf)
+            chunks, total_pages = ocr_pdf_to_chunks(pdf)
+            _report_chunks("After OCR", pdf.name, chunks, total_pages)
+        else:
+            from src.pdf.ocr import ensure_ocr
+
+            ocr_pdf = ensure_ocr(pdf)
+            _report("After OCR", ocr_pdf)
     except Exception as e:
         _console.print(f"[red]OCR failed: {e}[/red]")
         return 1
-
-    _report("After OCR", ocr_pdf)
     return 0

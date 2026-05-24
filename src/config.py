@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     downloads_dir: Path = Path("downloads")
 
     enable_ocr: bool = True
-    ocr_languages: str = "ell+eng"
+    ocr_engine: str = "tesseract"  # "tesseract" (local) | "mistral" (cloud API)
+    ocr_languages: str = "ell+eng"  # tesseract only
+    mistral_api_key: str | None = None
+    mistral_ocr_model: str = "mistral-ocr-latest"
     min_text_chars: int = 500
     min_chars_per_page: int = 200
     min_page_coverage: float = 0.5

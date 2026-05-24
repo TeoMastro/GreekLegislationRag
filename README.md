@@ -3,8 +3,9 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENCE.md)
 
 Multi-agent Retrieval-Augmented Generation over Greek ΦΕΚ documents.
-Parses PDFs with **Docling** (with **ocrmypdf + Tesseract** fallback for
-scanned FEKs), embeds with **OpenAI** (`text-embedding-3-small`), stores
+Parses PDFs with **Docling** (with an OCR fallback for scanned FEKs —
+**ocrmypdf + Tesseract** locally, or **Mistral OCR** via API), embeds with
+**OpenAI** (`text-embedding-3-small`), stores
 vectors in **Supabase pgvector**, and answers questions in Greek with
 **GPT-5.x** using hybrid (semantic + full-text) retrieval.
 
@@ -17,8 +18,9 @@ PDF (downloads/YYYY/*.pdf)
   └─► Docling DocumentConverter   (layout + tables; do_ocr=False)
         └─► assess_text_quality   (chars / chars-per-page / page coverage)
               ├─ pass → Docling HybridChunker
-              └─ fail → ocrmypdf + Tesseract (ell+eng), cached to downloads/.ocr/
-                       └─► re-extract → Docling HybridChunker
+              └─ fail → OCR_ENGINE (cached to downloads/.ocr/):
+                       • tesseract: ocrmypdf+Tesseract (ell+eng) → re-extract → HybridChunker
+                       • mistral:   Mistral OCR API → per-page markdown chunked in place
                              └─► OpenAI embeddings (text-embedding-3-small, 1536d)
                                    └─► Supabase: documents
                                        (vector + accent-folded tsvector + jsonb)
@@ -94,6 +96,8 @@ if a specific environment needs to.
 | `SUPABASE_SERVICE_KEY` | yes | service-role key (writes) |
 | `SUPABASE_ANON_KEY` | no | optional read-only key |
 | `CHECKPOINTER_DSN` | no | Postgres DSN for LangGraph multi-turn memory; falls back to in-memory |
+| `OCR_ENGINE` | no | `tesseract` (default, local) or `mistral` (cloud) — engine for scanned PDFs |
+| `MISTRAL_API_KEY` | no | required only when `OCR_ENGINE=mistral` |
 
 ### 3. Python
 
@@ -191,6 +195,36 @@ brew install tesseract tesseract-lang ghostscript
 ```
 
 Then `tesseract --list-langs` should include `ell`. No PATH tweaks needed.
+
+#### Mistral OCR (cloud alternative)
+
+Instead of local Tesseract you can route the scanned-PDF fallback to
+[**Mistral OCR**](https://docs.mistral.ai/capabilities/OCR/basic_ocr/) — often
+stronger on Greek scans, and it needs **no system dependencies** (no Tesseract,
+no Ghostscript) and **no extra Python packages** (it's a plain REST call over
+the `httpx` that already ships with the project). It's a paid, per-page API
+call, so it's opt-in — just set two values in `.env`:
+
+```bash
+OCR_ENGINE=mistral
+MISTRAL_API_KEY=...
+```
+
+The quality-gate logic is unchanged — born-digital PDFs that pass the
+thresholds still skip OCR entirely; only PDFs that *fail* the gate are sent to
+Mistral. Where ocrmypdf produces a searchable PDF that Docling re-parses,
+Mistral returns per-page markdown directly, which is chunked in place with the
+page number preserved on every chunk. Raw markdown is cached at
+`downloads/.ocr/<rel>.pdf.mistral.json` (keyed by source mtime), so re-runs and
+`diagnose` don't re-bill. Each chunk carries `metadata.ocr_engine` recording
+which engine produced it.
+
+`diagnose` honours `OCR_ENGINE`, so you can compare cost/quality on one file
+before backfilling:
+
+```bash
+OCR_ENGINE=mistral python -m src.main diagnose 20220100089.pdf
+```
 
 ### 5. PDFs
 

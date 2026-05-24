@@ -81,7 +81,7 @@ def _extract(pdf: Path) -> tuple[list[dict], int]:
     return chunks, total_pages
 
 
-def process_pdf(pdf: Path, force: bool = False) -> int:
+def process_pdf(pdf: Path) -> int:
     chunks, total_pages = _extract(pdf)
     ok, reason = assess_text_quality(chunks, total_pages)
     ocr_used = False
@@ -89,16 +89,21 @@ def process_pdf(pdf: Path, force: bool = False) -> int:
     if not ok and settings.enable_ocr:
         console.print(
             f"[yellow]{pdf.name}: {reason} — running OCR "
-            f"(this can take a few minutes)...[/yellow]"
+            f"({settings.ocr_engine}, this can take a while)...[/yellow]"
         )
         try:
-            from src.pdf.ocr import ensure_ocr
+            if settings.ocr_engine == "mistral":
+                from src.pdf.mistral_ocr import ocr_pdf_to_chunks
 
-            ocr_pdf = ensure_ocr(pdf)
+                chunks, total_pages = ocr_pdf_to_chunks(pdf)
+            else:
+                from src.pdf.ocr import ensure_ocr
+
+                ocr_pdf = ensure_ocr(pdf)
+                chunks, total_pages = _extract(ocr_pdf)
         except Exception as e:
             console.print(f"[red]{pdf.name}: OCR failed: {e}[/red]")
             return 0
-        chunks, total_pages = _extract(ocr_pdf)
         ok, reason = assess_text_quality(chunks, total_pages)
         ocr_used = True
 
@@ -130,11 +135,15 @@ def process_pdf(pdf: Path, force: bool = False) -> int:
                     "embedding_model": settings.openai_embedding_model,
                     "embedding_dim": settings.openai_embedding_dimension,
                     "ocr_used": ocr_used,
+                    **({"ocr_engine": settings.ocr_engine} if ocr_used else {}),
                 },
             }
         )
-    if force:
-        delete_by_source(pdf.name)
+    # Always clear any existing rows for this source before inserting, so a
+    # re-processed PDF can never stack a second copy on top of old rows
+    # (interrupted or overlapping runs). Skipped sources never reach here, so
+    # this is free on the normal resumable path.
+    delete_by_source(pdf.name)
     inserted_ids = insert_chunks(rows)
 
     if settings.enable_citation_extraction and inserted_ids:
@@ -199,7 +208,7 @@ def ingest(
         for pdf in pending:
             progress.update(task, description=f"Ingesting {pdf.name}")
             try:
-                n = process_pdf(pdf, force=force)
+                n = process_pdf(pdf)
                 if n == 0:
                     no_text.append(pdf)
                 else:
