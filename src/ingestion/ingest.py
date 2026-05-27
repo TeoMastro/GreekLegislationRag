@@ -81,35 +81,81 @@ def _extract(pdf: Path) -> tuple[list[dict], int]:
     return chunks, total_pages
 
 
-def process_pdf(pdf: Path) -> int:
-    chunks, total_pages = _extract(pdf)
-    ok, reason = assess_text_quality(chunks, total_pages)
-    ocr_used = False
+def _ocr_mistral(pdf: Path) -> tuple[list[dict], int]:
+    from src.pdf.mistral_ocr import ocr_pdf_to_chunks
 
-    if not ok and settings.enable_ocr:
-        console.print(
-            f"[yellow]{pdf.name}: {reason} — running OCR "
-            f"({settings.ocr_engine}, this can take a while)...[/yellow]"
-        )
+    return ocr_pdf_to_chunks(pdf)
+
+
+def _ocr_tesseract(pdf: Path) -> tuple[list[dict], int]:
+    from src.pdf.ocr import ensure_ocr
+
+    return _extract(ensure_ocr(pdf))
+
+
+_OCR_ENGINES = {"mistral": _ocr_mistral, "tesseract": _ocr_tesseract}
+
+
+def _too_big_for_mistral(pdf: Path) -> bool:
+    try:
+        return pdf.stat().st_size > settings.mistral_max_pdf_mb * 1024 * 1024
+    except OSError:
+        return False
+
+
+def ocr_with_fallback(pdf: Path) -> tuple[list[dict], int, str | None]:
+    """OCR a PDF via the primary engine, falling back to the other on failure.
+
+    Order is ``settings.ocr_engine`` first (default ``"mistral"``), then the
+    other engine. A PDF larger than ``settings.mistral_max_pdf_mb`` skips the
+    Mistral inline upload (which the API would reject anyway) and goes straight
+    to the Tesseract/ocrmypdf path. Returns ``(chunks, total_pages, engine)``;
+    ``engine`` is ``None`` only when every engine yielded no usable text.
+    """
+    primary = settings.ocr_engine if settings.ocr_engine in _OCR_ENGINES else "mistral"
+    fallback = "tesseract" if primary == "mistral" else "mistral"
+
+    order: list[str] = []
+    for engine in (primary, fallback):
+        if engine == "mistral" and _too_big_for_mistral(pdf):
+            console.print(
+                f"[yellow]{pdf.name}: {pdf.stat().st_size / 1048576:.0f}MB over the "
+                f"{settings.mistral_max_pdf_mb}MB Mistral limit — using Tesseract.[/yellow]"
+            )
+            continue
+        order.append(engine)
+
+    for engine in order:
         try:
-            if settings.ocr_engine == "mistral":
-                from src.pdf.mistral_ocr import ocr_pdf_to_chunks
-
-                chunks, total_pages = ocr_pdf_to_chunks(pdf)
-            else:
-                from src.pdf.ocr import ensure_ocr
-
-                ocr_pdf = ensure_ocr(pdf)
-                chunks, total_pages = _extract(ocr_pdf)
+            chunks, total_pages = _OCR_ENGINES[engine](pdf)
+            chunks = [c for c in chunks if c["text"] and c["text"].strip()]
+            if chunks:
+                return chunks, total_pages, engine
+            console.print(
+                f"[yellow]{pdf.name}: {engine} produced no text — trying next engine.[/yellow]"
+            )
         except Exception as e:
-            console.print(f"[red]{pdf.name}: OCR failed: {e}[/red]")
-            return 0
-        ok, reason = assess_text_quality(chunks, total_pages)
-        ocr_used = True
+            console.print(
+                f"[yellow]{pdf.name}: {engine} OCR failed ({e}) — trying next engine.[/yellow]"
+            )
+    return [], 0, None
 
-    if not ok:
-        console.print(f"[yellow]Skipping {pdf.name}: {reason}[/yellow]")
+
+def process_pdf(pdf: Path) -> int:
+    if settings.enable_ocr:
+        console.print(
+            f"[dim]{pdf.name}: OCR ({settings.ocr_engine} → fallback)...[/dim]"
+        )
+        chunks, total_pages, engine = ocr_with_fallback(pdf)
+    else:
+        chunks, total_pages = _extract(pdf)
+        engine = None
+
+    if not chunks:
+        console.print(f"[yellow]Skipping {pdf.name}: no text extracted[/yellow]")
         return 0
+
+    ocr_used = engine is not None
 
     base_meta = metadata_from_path(pdf)
     full_text = "\n\n".join(c["text"] for c in chunks[:5])
@@ -135,7 +181,7 @@ def process_pdf(pdf: Path) -> int:
                     "embedding_model": settings.openai_embedding_model,
                     "embedding_dim": settings.openai_embedding_dimension,
                     "ocr_used": ocr_used,
-                    **({"ocr_engine": settings.ocr_engine} if ocr_used else {}),
+                    **({"ocr_engine": engine} if engine else {}),
                 },
             }
         )

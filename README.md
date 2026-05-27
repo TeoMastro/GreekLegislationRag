@@ -3,10 +3,10 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENCE.md)
 
 Multi-agent Retrieval-Augmented Generation over Greek ΦΕΚ documents.
-Parses PDFs with **Docling** (with an OCR fallback for scanned FEKs —
-**ocrmypdf + Tesseract** locally, or **Mistral OCR** via API), embeds with
-**OpenAI** (`text-embedding-3-small`), stores
-vectors in **Supabase pgvector**, and answers questions in Greek with
+OCRs every PDF — **Mistral OCR** via API by default, falling back to local
+**ocrmypdf + Tesseract + Docling** when Mistral errors or can't take the file
+(e.g. very large PDFs) — embeds with **OpenAI** (`text-embedding-3-small`),
+stores vectors in **Supabase pgvector**, and answers questions in Greek with
 **GPT-5.x** using hybrid (semantic + full-text) retrieval.
 
 ---
@@ -15,15 +15,13 @@ vectors in **Supabase pgvector**, and answers questions in Greek with
 
 ```
 PDF (downloads/YYYY/*.pdf)
-  └─► Docling DocumentConverter   (layout + tables; do_ocr=False)
-        └─► assess_text_quality   (chars / chars-per-page / page coverage)
-              ├─ pass → Docling HybridChunker
-              └─ fail → OCR_ENGINE (cached to downloads/.ocr/):
-                       • tesseract: ocrmypdf+Tesseract (ell+eng) → re-extract → HybridChunker
-                       • mistral:   Mistral OCR API → per-page markdown chunked in place
-                             └─► OpenAI embeddings (text-embedding-3-small, 1536d)
-                                   └─► Supabase: documents
-                                       (vector + accent-folded tsvector + jsonb)
+  └─► OCR every PDF — primary engine → fallback (cached to downloads/.ocr/):
+        ├─ mistral   : Mistral OCR API → per-page markdown chunked in place
+        │              (skipped when PDF > MISTRAL_MAX_PDF_MB)
+        └─ tesseract : ocrmypdf+Tesseract (ell+eng) → Docling re-extract → HybridChunker
+              └─► OpenAI embeddings (text-embedding-3-small, 1536d)
+                    └─► Supabase: documents
+                        (vector + accent-folded tsvector + jsonb)
 
 Query (multi-agent LangGraph)
   └─► RewriterAgent  — make follow-ups standalone, embed once
@@ -96,8 +94,10 @@ if a specific environment needs to.
 | `SUPABASE_SERVICE_KEY` | yes | service-role key (writes) |
 | `SUPABASE_ANON_KEY` | no | optional read-only key |
 | `CHECKPOINTER_DSN` | no | Postgres DSN for LangGraph multi-turn memory; falls back to in-memory |
-| `OCR_ENGINE` | no | `tesseract` (default, local) or `mistral` (cloud) — engine for scanned PDFs |
-| `MISTRAL_API_KEY` | no | required only when `OCR_ENGINE=mistral` |
+| `OCR_ENGINE` | no | primary OCR engine: `mistral` (default, cloud) or `tesseract` (local); the other is the automatic fallback |
+| `MISTRAL_API_KEY` | no | required for the default `mistral` engine; omit only if you set `OCR_ENGINE=tesseract` |
+| `MISTRAL_MAX_PDF_MB` | no | PDFs larger than this (default `50`) skip Mistral and go straight to Tesseract |
+| `ENABLE_OCR` | no | `true` (default) OCRs every PDF; `false` uses Docling's native text layer only |
 
 ### 3. Python
 
@@ -110,18 +110,19 @@ pip install -r requirements.txt
 Docling will download its layout models on first run (a few hundred MB,
 cached under `~/.cache/docling/`).
 
-### 4. OCR for scanned PDFs (recommended for the FEK corpus)
+### 4. OCR (every PDF is OCR'd)
 
-Older FEK documents (and many gazette-signed PDFs) are **scans with only a
-form-field text layer** — docling extracts ~100 chars from a 40-page document
-and the chunk would be useless. The ingest pipeline detects this via three
-quality thresholds (`min_text_chars`, `min_chars_per_page`, `min_page_coverage`
-in `config.py`) and falls back to **`ocrmypdf` + Tesseract** with `ell+eng`
-language data. The OCR'd PDF is cached at `downloads/.ocr/<rel-path>.pdf`,
-so re-runs are free.
+Every PDF is OCR'd — too many FEKs have broken or glyph-mangled text layers to
+trust native extraction. The default engine is **Mistral OCR** (cloud); when it
+errors, returns nothing, or the PDF exceeds `MISTRAL_MAX_PDF_MB`, ingest falls
+back to **`ocrmypdf` + Tesseract** with `ell+eng` language data. Both outputs
+are cached under `downloads/.ocr/` (searchable `*.pdf` for Tesseract,
+`*.pdf.mistral.json` for Mistral), so re-runs are free. The engine that actually
+produced each chunk is recorded in `metadata.ocr_engine`.
 
-Native text-layer PDFs that pass the thresholds skip OCR entirely — there's
-no speed cost for born-digital documents.
+You still need the Tesseract toolchain (below) installed for the fallback path.
+To OCR with Tesseract only, set `OCR_ENGINE=tesseract`; to skip OCR entirely and
+use Docling's native text layer, set `ENABLE_OCR=false`.
 
 #### Windows install
 
@@ -196,28 +197,26 @@ brew install tesseract tesseract-lang ghostscript
 
 Then `tesseract --list-langs` should include `ell`. No PATH tweaks needed.
 
-#### Mistral OCR (cloud alternative)
+#### Mistral OCR (default engine)
 
-Instead of local Tesseract you can route the scanned-PDF fallback to
-[**Mistral OCR**](https://docs.mistral.ai/capabilities/OCR/basic_ocr/) — often
-stronger on Greek scans, and it needs **no system dependencies** (no Tesseract,
-no Ghostscript) and **no extra Python packages** (it's a plain REST call over
-the `httpx` that already ships with the project). It's a paid, per-page API
-call, so it's opt-in — just set two values in `.env`:
+[**Mistral OCR**](https://docs.mistral.ai/capabilities/OCR/basic_ocr/) is the
+default OCR engine — often stronger on Greek than Tesseract, and it needs **no
+system dependencies** (no Tesseract, no Ghostscript) and **no extra Python
+packages** (it's a plain REST call over the `httpx` that already ships with the
+project). It's a paid, per-page API call. Set your key in `.env`:
 
 ```bash
-OCR_ENGINE=mistral
+OCR_ENGINE=mistral        # default
 MISTRAL_API_KEY=...
 ```
 
-The quality-gate logic is unchanged — born-digital PDFs that pass the
-thresholds still skip OCR entirely; only PDFs that *fail* the gate are sent to
-Mistral. Where ocrmypdf produces a searchable PDF that Docling re-parses,
-Mistral returns per-page markdown directly, which is chunked in place with the
-page number preserved on every chunk. Raw markdown is cached at
+Where ocrmypdf produces a searchable PDF that Docling re-parses, Mistral returns
+per-page markdown directly, which is chunked in place with the page number
+preserved on every chunk. Raw markdown is cached at
 `downloads/.ocr/<rel>.pdf.mistral.json` (keyed by source mtime), so re-runs and
-`diagnose` don't re-bill. Each chunk carries `metadata.ocr_engine` recording
-which engine produced it.
+`diagnose` don't re-bill. PDFs larger than `MISTRAL_MAX_PDF_MB` (default 50)
+skip Mistral's inline upload and fall back to Tesseract automatically. Each
+chunk carries `metadata.ocr_engine` recording which engine produced it.
 
 `diagnose` honours `OCR_ENGINE`, so you can compare cost/quality on one file
 before backfilling:

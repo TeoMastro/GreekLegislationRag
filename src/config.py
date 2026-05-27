@@ -27,10 +27,15 @@ class Settings(BaseSettings):
     downloads_dir: Path = Path("downloads")
 
     enable_ocr: bool = True
-    ocr_engine: str = "tesseract"  # "tesseract" (local) | "mistral" (cloud API)
+    # Primary OCR engine; the other is the automatic fallback when the primary
+    # errors or returns no text. Default flow: Mistral (cloud) -> Tesseract (local).
+    ocr_engine: str = "mistral"  # "mistral" (cloud API) | "tesseract" (local)
     ocr_languages: str = "ell+eng"  # tesseract only
     mistral_api_key: str | None = None
     mistral_ocr_model: str = "mistral-ocr-latest"
+    # PDFs larger than this skip Mistral's inline upload (it rejects ~>50MB) and
+    # go straight to the Tesseract fallback instead of failing slowly.
+    mistral_max_pdf_mb: int = 50
     min_text_chars: int = 500
     min_chars_per_page: int = 200
     min_page_coverage: float = 0.5
