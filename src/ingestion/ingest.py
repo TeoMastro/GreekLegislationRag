@@ -8,6 +8,7 @@ from src.pdf.docling_loader import load_pdf
 from src.ingestion.chunker import chunk_document
 from src.ingestion.metadata import metadata_from_path, enrich_with_llm
 from src.ingestion.embedder import embed_texts
+from src.ingestion.quality import assess_text_quality
 from src.retrieval.store import delete_by_source, existing_sources, insert_chunks
 
 
@@ -47,32 +48,6 @@ def _resolve_file(file: str) -> Path | None:
             console.print(f"  - {m}")
         return None
     return matches[0]
-
-
-def assess_text_quality(
-    chunks: list[dict], total_pages: int
-) -> tuple[bool, str]:
-    if not chunks:
-        return False, "no extractable text"
-    total_chars = sum(len(c["text"].strip()) for c in chunks)
-    if total_chars < settings.min_text_chars:
-        return False, f"only {total_chars} chars total"
-    if total_pages > 0:
-        pages_with_text = len({p for c in chunks for p in (c.get("pages") or [])})
-        chars_per_page = total_chars / total_pages
-        coverage = pages_with_text / total_pages
-        if chars_per_page < settings.min_chars_per_page:
-            return False, (
-                f"{chars_per_page:.0f} chars/page over {total_pages} pages "
-                f"(likely scanned)"
-            )
-        if coverage < settings.min_page_coverage:
-            return False, (
-                f"only {pages_with_text}/{total_pages} pages have text "
-                f"(likely scanned)"
-            )
-    return True, ""
-
 
 def _extract(pdf: Path) -> tuple[list[dict], int]:
     doc = load_pdf(pdf)

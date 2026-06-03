@@ -87,14 +87,19 @@ def hybrid_search(
     query_embedding: list[float],
     match_count: int | None = None,
     filter: dict | None = None,
+    full_text_weight: float | None = None,
+    semantic_weight: float | None = None,
+    rrf_k: int | None = None,
 ) -> list[dict]:
+    # Weights / rrf_k default to the configured production values; callers (the
+    # ablation harness, future per-query tuning) may override them.
     params = {
         "query_text": query_text,
         "query_embedding": query_embedding,
         "match_count": match_count or settings.top_k,
-        "full_text_weight": settings.hybrid_full_text_weight,
-        "semantic_weight": settings.hybrid_semantic_weight,
-        "rrf_k": settings.rrf_k,
+        "full_text_weight": settings.hybrid_full_text_weight if full_text_weight is None else full_text_weight,
+        "semantic_weight": settings.hybrid_semantic_weight if semantic_weight is None else semantic_weight,
+        "rrf_k": settings.rrf_k if rrf_k is None else rrf_k,
         "filter": filter or {},
     }
     max_attempts = 3

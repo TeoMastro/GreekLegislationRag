@@ -4,21 +4,15 @@ from rich.console import Console
 from rich.table import Table
 
 from src.config import settings
-from src.ingestion.ingest import _extract, assess_text_quality
+from src.ingestion.ingest import _extract
+from src.ingestion.quality import (
+    assess_text_quality,
+    greek_char_count as _greek_count,
+    latin_char_count as _latin_count,
+)
 
 
 _console = Console()
-
-
-def _greek_count(text: str) -> int:
-    return sum(
-        1 for c in text
-        if "Ͱ" <= c <= "Ͽ" or "ἀ" <= c <= "῿"
-    )
-
-
-def _latin_count(text: str) -> int:
-    return sum(1 for c in text if "a" <= c.lower() <= "z")
 
 
 def _resolve_pdf(arg: str) -> Path | None:

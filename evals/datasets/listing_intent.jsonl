@@ -1,0 +1,18 @@
+// §4.2 ListingAgent._extract_intent gold set. Scored on exact-match of the scalar
+// filter fields listed in `expected` (a field set to null MUST come back null).
+// `keywords_any` (optional) is a loose check: at least one expected keyword present.
+// schema: {query, expected: {field: value|null, ...}, keywords_any?: [...]}
+{"query": "Ν. 5263", "expected": {"kind": "Ν.", "number": 5263, "year": null, "fek_number": null}}
+{"query": "ΦΕΚ Α 238/2025", "expected": {"fek_series": "Α", "fek_number": 238, "fek_year": 2025, "number": null}}
+{"query": "Π.Δ. 56 του 2023", "expected": {"kind": "Π.Δ.", "number": 56, "year": 2023}}
+// "πάνω από N" / "λιγότερες από N" are STRICT inequalities: more-than-100 -> >=101,
+// fewer-than-10 -> <=9. (Use "τουλάχιστον/μέχρι" phrasing for inclusive bounds.)
+{"query": "νόμοι του 2024 με πάνω από 100 σελίδες", "expected": {"year": 2024, "min_pages": 101, "number": null}}
+{"query": "νόμοι του 2022 με λιγότερες από 10 σελίδες", "expected": {"year": 2022, "max_pages": 9}}
+{"query": "νόμος για την τεχνητή νοημοσύνη", "expected": {"number": null, "kind": null}, "keywords_any": ["τεχνητή", "νοημοσύνη"]}
+{"query": "νόμοι μεταξύ Αυγούστου και Σεπτεμβρίου 2025", "expected": {"date_from": "2025-08-01", "date_to": "2025-09-30"}}
+{"query": "ΦΕΚ Β 1500/2023", "expected": {"fek_series": "Β", "fek_number": 1500, "fek_year": 2023}}
+{"query": "νόμος 4727 του 2020 για την ψηφιακή διακυβέρνηση", "expected": {"number": 4727, "year": 2020}, "keywords_any": ["ψηφιακή", "διακυβέρνηση"]}
+{"query": "προεδρικά διατάγματα του 2019", "expected": {"kind": "Π.Δ.", "year": 2019, "number": null}}
+{"query": "νόμοι για το περιβάλλον", "expected": {"number": null, "year": null}, "keywords_any": ["περιβάλλον"]}
+{"query": "ΦΕΚ Α 100/2024 με πάνω από 50 σελίδες", "expected": {"fek_series": "Α", "fek_number": 100, "fek_year": 2024, "min_pages": 51}}

@@ -143,10 +143,13 @@ def _format_context(sources: list[Document]) -> str:
 class CombinerAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__("CombinerAgent")
+        # GPT-5-family models (e.g. gpt-5.4) reject `max_tokens`; the output cap
+        # must be passed as `max_completion_tokens`. Routed via model_kwargs so it
+        # reaches the API unchanged regardless of the langchain-openai version.
         self.llm = ChatOpenAI(
             model=settings.openai_chat_model,
-            max_tokens=settings.llm_max_tokens,
             api_key=settings.openai_api_key,
+            model_kwargs={"max_completion_tokens": settings.llm_max_tokens},
         )
 
     def execute(self, state: dict[str, Any]) -> dict[str, Any]:

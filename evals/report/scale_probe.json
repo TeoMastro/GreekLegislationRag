@@ -1,0 +1,27 @@
+{
+  "corpus_chunks": 57268,
+  "doc_recall@10": 0.94,
+  "doc_recall@10_filtered": 0.9,
+  "doc_recall@50": 0.96,
+  "filtered_sample": 10,
+  "headroom@10_to@k": 0.02,
+  "k": 50,
+  "latency_filtered_s": {
+    "max": 4.873,
+    "p50": 4.505,
+    "p95": 4.873
+  },
+  "latency_unfiltered_s": {
+    "max": 5.648,
+    "p50": 4.831,
+    "p95": 5.477
+  },
+  "n": 50,
+  "ram_projection_gb_vectors_only": {
+    "1536d_at_1M": 6.14,
+    "3072d_at_1M": 12.29,
+    "current_dim_current_corpus": 0.35
+  },
+  "timeouts_filtered": 0,
+  "timeouts_unfiltered": 0
+}

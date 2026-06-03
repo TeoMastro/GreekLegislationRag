@@ -1,0 +1,34 @@
+{
+  "expected": 18,
+  "false_positives": [],
+  "found": 18,
+  "fp_rate": 0.0,
+  "known_gaps": [
+    {
+      "id": "nu_word_nom",
+      "why": "nominative 'νόμος' not in regex alternation (has νόμου?/νόμο/νόμοι/νόμων)"
+    },
+    {
+      "id": "pd_word",
+      "why": "genitive 'προεδρικού διατάγματος' not matched (regex has only προεδρικ[όή] + διάταγμα(τος)?)"
+    }
+  ],
+  "misses": [],
+  "per_format": {
+    "an": 1.0,
+    "an_word": 1.0,
+    "article_ref": 1.0,
+    "multi_ref": 1.0,
+    "nu_bare": 1.0,
+    "nu_dot": 1.0,
+    "nu_word": 1.0,
+    "ocr_wrap": 1.0,
+    "pd": 1.0,
+    "pnp": 1.0,
+    "pnp_word": 1.0,
+    "spacing": 1.0,
+    "ya": 1.0
+  },
+  "recall_overall": 0.9,
+  "recall_supported": 1.0
+}

@@ -1,0 +1,28 @@
+// Golden table for src/citations/normalize.py — canonicalize_kind + canonical_key.
+// Hard invariant: 100% exact match. The canonical_key is the citation graph's join key.
+// schema: {raw, number?, year?, expected_kind (null if not a law kind), expected_key?}
+{"raw": "ν.", "number": 4001, "year": 2011, "expected_kind": "Ν.", "expected_key": "Ν.4001/2011"}
+{"raw": "Ν.", "number": 4001, "year": 2011, "expected_kind": "Ν.", "expected_key": "Ν.4001/2011"}
+{"raw": "ν", "number": 5263, "year": 2025, "expected_kind": "Ν.", "expected_key": "Ν.5263/2025"}
+{"raw": "νόμος", "number": 4548, "year": 2018, "expected_kind": "Ν.", "expected_key": "Ν.4548/2018"}
+{"raw": "νόμου", "number": 4548, "year": 2018, "expected_kind": "Ν.", "expected_key": "Ν.4548/2018"}
+{"raw": "νόμο", "number": 4548, "year": 2018, "expected_kind": "Ν.", "expected_key": "Ν.4548/2018"}
+{"raw": "νόμων", "number": 4548, "year": 2018, "expected_kind": "Ν.", "expected_key": "Ν.4548/2018"}
+{"raw": "π.δ.", "number": 56, "year": 2023, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.56/2023"}
+{"raw": "π.δ", "number": 18, "year": 1989, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.18/1989"}
+{"raw": "π δ", "number": 18, "year": 1989, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.18/1989"}
+{"raw": "πδ", "number": 18, "year": 1989, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.18/1989"}
+{"raw": "προεδρικό διάταγμα", "number": 80, "year": 2016, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.80/2016"}
+{"raw": "προεδρικού διατάγματος", "number": 80, "year": 2016, "expected_kind": "Π.Δ.", "expected_key": "Π.Δ.80/2016"}
+{"raw": "π.ν.π.", "number": 12, "year": 2024, "expected_kind": "Π.Ν.Π.", "expected_key": "Π.Ν.Π.12/2024"}
+{"raw": "πνπ", "number": 12, "year": 2024, "expected_kind": "Π.Ν.Π.", "expected_key": "Π.Ν.Π.12/2024"}
+{"raw": "υ.α.", "number": 99, "year": 2024, "expected_kind": "Υ.Α.", "expected_key": "Υ.Α.99/2024"}
+{"raw": "υα", "number": 99, "year": 2024, "expected_kind": "Υ.Α.", "expected_key": "Υ.Α.99/2024"}
+{"raw": "υπουργικής απόφασης", "number": 99, "year": 2024, "expected_kind": "Υ.Α.", "expected_key": "Υ.Α.99/2024"}
+{"raw": "α.π.", "number": 1, "year": 2020, "expected_kind": "Α.Π.", "expected_key": "Α.Π.1/2020"}
+{"raw": "α.ν.", "number": 1846, "year": 1951, "expected_kind": "Α.Ν.", "expected_key": "Α.Ν.1846/1951"}
+{"raw": "αναγκαστικού νόμου", "number": 1846, "year": 1951, "expected_kind": "Α.Ν.", "expected_key": "Α.Ν.1846/1951"}
+{"raw": "αν", "expected_kind": null}
+{"raw": "", "expected_kind": null}
+{"raw": "φεκ", "expected_kind": null}
+{"raw": "άρθρο", "expected_kind": null}

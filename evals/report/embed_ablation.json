@@ -1,0 +1,20 @@
+{
+  "mini_index_size": 1550,
+  "models": {
+    "text-embedding-3-large": {
+      "doc_recall@1": 0.86,
+      "doc_recall@10": 0.88,
+      "doc_recall@5": 0.88,
+      "exact_mrr": 0.8181,
+      "exact_recall@10": 0.84
+    },
+    "text-embedding-3-small": {
+      "doc_recall@1": 0.76,
+      "doc_recall@10": 0.8,
+      "doc_recall@5": 0.78,
+      "exact_mrr": 0.7366,
+      "exact_recall@10": 0.78
+    }
+  },
+  "n_queries": 50
+}

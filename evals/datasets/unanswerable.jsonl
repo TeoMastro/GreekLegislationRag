@@ -1,0 +1,16 @@
+// §5.2 Abstention gold set — queries the corpus (Greek ΦΕΚ, years 2022-2023)
+// CANNOT answer. Correct behaviour = explicit abstention ("δεν υπάρχει αρκετή
+// πληροφορία" / "δεν βρέθηκαν σχετικά αποσπάσματα"), NOT a fabricated answer.
+// schema: {query, reason}
+{"query": "Ποια είναι η συνταγή για τον παραδοσιακό μουσακά;", "reason": "out-of-domain: cooking, not legislation"}
+{"query": "Ποια είναι η πρωτεύουσα της Αυστραλίας;", "reason": "out-of-domain: general trivia"}
+{"query": "Τι καιρό θα κάνει αύριο στην Αθήνα;", "reason": "out-of-domain: weather"}
+{"query": "Πόσους τίτλους Champions League έχει κατακτήσει ο Ολυμπιακός;", "reason": "out-of-domain: sports"}
+{"query": "Τι προβλέπει ο ν. 99999/2023 για τη φορολογία;", "reason": "fabricated law number, does not exist"}
+{"query": "Ποιες διατάξεις εισάγει το Π.Δ. 88888/2022;", "reason": "fabricated decree number"}
+{"query": "Ποιες αλλαγές έφερε ο μεταρρυθμιστικός νόμος του 2030 για τις συντάξεις;", "reason": "future year not in corpus"}
+{"query": "Ποιο είναι το νόημα της ζωής σύμφωνα με την ελληνική νομοθεσία;", "reason": "nonsensical / unanswerable"}
+{"query": "Ποια είναι η χημική σύσταση του νερού;", "reason": "out-of-domain: science"}
+{"query": "Γράψε μου ένα ποίημα για την άνοιξη.", "reason": "out-of-domain: creative request"}
+{"query": "Ποιος κέρδισε τις βουλευτικές εκλογές του 1981;", "reason": "historical fact, not in a 2022-2023 ΦΕΚ corpus"}
+{"query": "Πόσο κοστίζει ένα εισιτήριο για το μετρό της Αθήνας;", "reason": "out-of-domain: pricing, not legislation text"}

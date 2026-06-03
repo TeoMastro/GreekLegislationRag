@@ -1,0 +1,5 @@
+# Dev / eval dependencies (not needed at runtime).
+-r requirements.txt
+
+pytest>=8.0
+numpy>=1.26   # evals/retrieval/embed_ablation.py (cosine over the mini-index)

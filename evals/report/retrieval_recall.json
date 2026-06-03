@@ -1,0 +1,11 @@
+{
+  "doc_recall@1": 0.5,
+  "doc_recall@10": 0.7,
+  "doc_recall@5": 0.6667,
+  "exact_mrr": 0.2392,
+  "exact_ndcg@10": 0.2704,
+  "exact_recall@1": 0.1667,
+  "exact_recall@10": 0.3667,
+  "exact_recall@5": 0.3333,
+  "n": 30
+}

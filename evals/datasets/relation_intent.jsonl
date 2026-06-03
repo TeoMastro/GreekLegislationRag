@@ -1,0 +1,18 @@
+// §4.1 RelationAgent._extract_intent gold set. Scored on: is_relational (the
+// routing decision), direction, resolved focal-law canonical key, relation set.
+// schema: {query, is_relational, direction?, source_law?{kind,number,year}, relations?}
+//   relations: null means "all relations" (the agent returns None).
+{"query": "Ποιους νόμους τροποποιεί ο Ν. 5167/2024;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Ν.", "number": 5167, "year": 2024}, "relations": ["τροποποιεί"]}
+{"query": "Ποιοι νόμοι κατήργησαν τον ν. 4001/2011;", "is_relational": true, "direction": "incoming", "source_law": {"kind": "Ν.", "number": 4001, "year": 2011}, "relations": ["καταργεί"]}
+{"query": "Ποιες διατάξεις αντικαθιστά το π.δ. 18/1989;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Π.Δ.", "number": 18, "year": 1989}, "relations": ["αντικαθιστά"]}
+{"query": "Σε ποιους νόμους αναφέρεται ο ν. 4622/2019;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Ν.", "number": 4622, "year": 2019}, "relations": ["αναφέρεται"]}
+{"query": "Ποιοι νόμοι τροποποίησαν τον ν. 4548/2018;", "is_relational": true, "direction": "incoming", "source_law": {"kind": "Ν.", "number": 4548, "year": 2018}, "relations": ["τροποποιεί"]}
+{"query": "Τι σχέση έχει ο ν. 4727/2020 με άλλους νόμους;", "is_relational": true, "direction": "both", "source_law": {"kind": "Ν.", "number": 4727, "year": 2020}, "relations": null}
+{"query": "Ποιες νομοθετικές μεταβολές επέφερε ο ν. 3852/2010 και ποιοι τον τροποποίησαν αργότερα;", "is_relational": true, "direction": "both", "source_law": {"kind": "Ν.", "number": 3852, "year": 2010}, "relations": null}
+{"query": "Ποιες διατάξεις προστέθηκαν στον ν. 2690/1999;", "is_relational": true, "direction": "incoming", "source_law": {"kind": "Ν.", "number": 2690, "year": 1999}, "relations": ["προστίθεται"]}
+{"query": "Πες μου για τη φορολογία ακινήτων το 2024", "is_relational": false, "direction": null, "source_law": null, "relations": null}
+{"query": "Τι προβλέπει ο ν. 4727/2020 για την ψηφιακή διακυβέρνηση;", "is_relational": false, "direction": null, "source_law": null, "relations": null}
+{"query": "Ποιος είναι ο νόμος για την τεχνητή νοημοσύνη;", "is_relational": false, "direction": null, "source_law": null, "relations": null}
+{"query": "Ποια είναι η προθεσμία υποβολής φορολογικής δήλωσης;", "is_relational": false, "direction": null, "source_law": null, "relations": null}
+{"query": "Δείξε μου τα ΦΕΚ του Αυγούστου 2025", "is_relational": false, "direction": null, "source_law": null, "relations": null}
+{"query": "Ποιους νόμους καταργεί ο ν. 5167/2024;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Ν.", "number": 5167, "year": 2024}, "relations": ["καταργεί"]}
