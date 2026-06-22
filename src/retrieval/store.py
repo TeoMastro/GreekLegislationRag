@@ -1,10 +1,77 @@
+import re
 import time
+import unicodedata
 from functools import lru_cache
 
 import httpx
 from supabase import Client, create_client
 
 from src.config import settings
+
+
+def _fold(s: str) -> str:
+    """Accent-strip + lowercase — matches the f_unaccent()/'simple' folding the
+    `fts` generated column applies to stored content."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c)
+    ).lower().strip()
+
+
+# Tokens that match (almost) every chunk. Including one in the OR'd lexical query
+# explodes the candidate scan and trips statement_timeout — e.g.
+# websearch_to_tsquery('greek','άρθρο') alone times out (see evals/FINDINGS.md #3).
+# NOTE: this Postgres' 'greek' config stems but does NOT carry a stopword
+# dictionary (verified: to_tsquery('greek','και') → 'κα', not dropped), so this
+# client-side list is the *only* stopword mechanism — it stays fully intact even
+# though we moved to 'greek'. Folded (accent-stripped, lowercased) to match the
+# f_unaccent folding the generated `fts` column applies.
+_FTS_STOPWORDS = {
+    # generic Greek function words
+    "ο", "η", "το", "οι", "τα", "του", "της", "των", "τον", "την", "και", "ή",
+    "να", "σε", "με", "για", "απο", "στο", "στη", "στην", "στον", "στους", "στις",
+    "ενας", "μια", "ενα", "που", "ποιος", "ποια", "ποιο", "ποιοι", "ποιες",
+    "ποιους", "τι", "πως", "βρες", "οπως", "καθε", "κατα", "μετα", "προς", "περι",
+    "ητοι", "ειναι", "αυτο", "αυτη", "αυτος", "οποιο", "οποια", "οποιος",
+    # ubiquitous legal-text terms (the timeout culprits)
+    "αρθρο", "αρθρα", "αρθρου", "αρθρων", "παραγραφος", "παραγραφου", "παραγραφο",
+    "παραγραφων", "παρ", "εδαφιο", "εδαφιου", "διαταξη", "διαταξεις", "διαταξεων",
+    "νομος", "νομου", "νομο", "νομοι", "νομων", "νομ", "φεκ", "παρουσα",
+    "παρουσας", "αποφαση", "αποφασης",
+}
+
+_TOKEN_SPLIT_RE = re.compile(r"[^0-9A-Za-zΑ-ωΆ-ώϊϋΐΰ]+")
+
+
+def _build_fts_query(text: str, max_terms: int = 6) -> str:
+    """Build an OR-of-lexemes `to_tsquery` string from a natural-language query.
+
+    Fixes the hybrid lexical leg (FINDINGS #3): websearch_to_tsquery ANDs every
+    term, so a full question becomes a conjunction no chunk satisfies (0 FTS rows
+    → silently pure-semantic). We instead OR the distinctive, accent-folded,
+    stopword-filtered terms so any single lexical hit re-enters RRF fusion. The
+    `match_documents_hybrid` RPC runs this through `to_tsquery('greek', …)`, whose
+    Snowball stemmer matches inflected query terms against stored inflections
+    (νόμος ↔ νόμου), so we no longer need the old `:*` prefix hack — stemming
+    handles inflection in both directions (verified: 97/100 vs 0/100 under the
+    prior 'simple' config; see FINDINGS #3 Cause B). Stopword-filtering the
+    ubiquitous terms (άρθρο, νόμος, …) and capping at `max_terms` keeps the
+    candidate scan bounded so the OR rewrite can't reintroduce the single-token
+    statement_timeout. Returns '' when no usable term remains (caller then runs
+    pure-semantic).
+    """
+    if not text:
+        return ""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for tok in _TOKEN_SPLIT_RE.split(text):
+        n = _fold(tok)
+        if len(n) < 3 or n in _FTS_STOPWORDS or n in seen:
+            continue
+        seen.add(n)
+        terms.append(n)
+        if len(terms) >= max_terms:
+            break
+    return " | ".join(terms)
 
 
 @lru_cache(maxsize=1)
@@ -95,6 +162,7 @@ def hybrid_search(
     # ablation harness, future per-query tuning) may override them.
     params = {
         "query_text": query_text,
+        "query_fts": _build_fts_query(query_text),
         "query_embedding": query_embedding,
         "match_count": match_count or settings.top_k,
         "full_text_weight": settings.hybrid_full_text_weight if full_text_weight is None else full_text_weight,

@@ -2,7 +2,7 @@
 
 Runs the synthetic gold set through several retrieval configurations and reports
 document-level recall for each, so the production defaults
-(full_text_weight=1, semantic_weight=1, rrf_k=50) rest on evidence rather than a
+(full_text_weight=1, semantic_weight=2, rrf_k=50) rest on evidence rather than a
 guess. This is an exploratory TUNING tool (emits a comparison report), not a
 pass/fail CI gate.
 
@@ -39,11 +39,13 @@ _console = Console()
 CONFIGS = [
     ("semantic_only", 0.0, 1.0, 50),
     ("fts_only", 1.0, 0.0, 50),
-    ("hybrid_balanced*", 1.0, 1.0, 50),   # * = current production default
-    ("hybrid_semantic_2x", 1.0, 2.0, 50),
+    ("hybrid_balanced", 1.0, 1.0, 50),
+    ("hybrid_semantic_2x*", 1.0, 2.0, 50),  # * = current production default
+    ("hybrid_semantic_3x", 1.0, 3.0, 50),   # chase the doc@1/MRR gap vs semantic_only
+    ("hybrid_semantic_4x", 1.0, 4.0, 50),
     ("hybrid_fts_2x", 2.0, 1.0, 50),
-    ("hybrid_rrf_k20", 1.0, 1.0, 20),
-    ("hybrid_rrf_k100", 1.0, 1.0, 100),
+    ("hybrid_rrf_k20", 1.0, 2.0, 20),
+    ("hybrid_rrf_k100", 1.0, 2.0, 100),
 ]
 
 

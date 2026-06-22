@@ -16,3 +16,5 @@
 {"query": "Ποια είναι η προθεσμία υποβολής φορολογικής δήλωσης;", "is_relational": false, "direction": null, "source_law": null, "relations": null}
 {"query": "Δείξε μου τα ΦΕΚ του Αυγούστου 2025", "is_relational": false, "direction": null, "source_law": null, "relations": null}
 {"query": "Ποιους νόμους καταργεί ο ν. 5167/2024;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Ν.", "number": 5167, "year": 2024}, "relations": ["καταργεί"]}
+{"query": "Ποιους νόμους επηρεάζει ο ν. 4878/2022;", "is_relational": true, "direction": "outgoing", "source_law": {"kind": "Ν.", "number": 4878, "year": 2022}, "relations": null}
+{"query": "Με ποιους άλλους νόμους σχετίζεται ο ν. 4001/2011;", "is_relational": true, "direction": "both", "source_law": {"kind": "Ν.", "number": 4001, "year": 2011}, "relations": null}

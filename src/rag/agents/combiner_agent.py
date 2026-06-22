@@ -11,7 +11,11 @@ from src.config import settings
 from src.rag.agents.base_agent import BaseAgent
 
 
-_CITATION_RE = re.compile(r"\[(\d+)\]")
+# Capture any leading horizontal space so that dropping an invalid citation
+# takes its preceding space with it — otherwise removing a mid-sentence [n]
+# leaves a double space ("και  το"). A kept citation returns m.group(0), i.e.
+# the original text including that space, so valid refs are untouched.
+_CITATION_RE = re.compile(r"[ \t]*\[(\d+)\]")
 
 
 def _strip_invalid_citations(answer: str, num_sources: int) -> str:

@@ -23,7 +23,9 @@ as $$
 $$;
 
 -- ------------------------------------------------------------
--- Chunks table — content + 1536-d embedding + accent-folded FTS
+-- Chunks table — content + 1536-d embedding + Greek-stemmed, accent-folded FTS
+-- (the 'greek' config Snowball-stems inflections and drops Greek stopwords;
+--  f_unaccent keeps it accent-insensitive — see evals/FINDINGS.md #3 Cause B)
 -- ------------------------------------------------------------
 create table if not exists documents (
     id          bigserial primary key,
@@ -31,7 +33,7 @@ create table if not exists documents (
     metadata    jsonb not null default '{}'::jsonb,
     embedding   vector(1536),
     fts         tsvector generated always as (
-                    to_tsvector('simple', f_unaccent(content))
+                    to_tsvector('greek', f_unaccent(content))
                 ) stored,
     created_at  timestamptz not null default now()
 );
@@ -78,6 +80,15 @@ $$;
 -- ------------------------------------------------------------
 -- Hybrid match (RRF: semantic + full-text), accent-folded on both sides
 -- so inflected Greek forms hit the full-text leg.
+--
+-- The lexical leg consumes `query_fts`, a pre-built to_tsquery string the
+-- caller (src/retrieval/store._build_fts_query) ORs together from the query's
+-- distinctive, stopword-filtered terms. websearch_to_tsquery ANDed every term,
+-- so a natural-language question became a conjunction no chunk satisfied (0 FTS
+-- rows → silently pure-semantic; see evals/FINDINGS.md #3). The 'greek' config
+-- Snowball-stems both sides, so inflected query terms hit stored inflections
+-- (the prior 'simple' config did no stemming — #3 Cause B). `query_text` is kept
+-- for API compatibility / debugging. Empty `query_fts` ⇒ pure-semantic.
 -- ------------------------------------------------------------
 create or replace function match_documents_hybrid (
     query_text          text,
@@ -86,7 +97,8 @@ create or replace function match_documents_hybrid (
     full_text_weight    float default 1.0,
     semantic_weight     float default 1.0,
     rrf_k               int   default 50,
-    filter              jsonb default '{}'::jsonb
+    filter              jsonb default '{}'::jsonb,
+    query_fts           text  default ''
 )
 returns table (
     id          bigint,
@@ -102,11 +114,12 @@ with full_text as (
            row_number() over (
                order by ts_rank_cd(
                    fts,
-                   websearch_to_tsquery('simple', f_unaccent(query_text))
+                   to_tsquery('greek', f_unaccent(query_fts))
                ) desc
            ) as rank_ix
     from documents
-    where fts @@ websearch_to_tsquery('simple', f_unaccent(query_text))
+    where query_fts <> ''
+      and fts @@ to_tsquery('greek', f_unaccent(query_fts))
       and metadata @> filter
     limit least(match_count * 2, 50)
 ),

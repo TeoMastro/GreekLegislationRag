@@ -1,8 +1,6 @@
 {
-  "edge_recall_mean_over_fired": 0.9898,
+  "edge_recall_mean_over_fired": 1.0,
   "n": 15,
-  "not_fired": [
-    "Ν.4878/2022"
-  ],
-  "routing_fired_rate": 0.9333
+  "not_fired": [],
+  "routing_fired_rate": 1.0
 }

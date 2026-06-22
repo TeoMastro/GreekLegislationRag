@@ -1,8 +1,8 @@
 {
-  "direction_acc": 0.8889,
+  "direction_acc": 0.9091,
   "failures": [],
   "focal_key_acc": 1.0,
   "is_relational_acc": 1.0,
   "is_relational_recall": 1.0,
-  "n": 14
+  "n": 16
 }

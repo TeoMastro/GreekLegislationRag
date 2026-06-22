@@ -13,11 +13,11 @@
 {"id": "nu_dot_space", "format": "nu_dot", "text": "Τροποποιείται το άρθρο 5 του ν. 4001/2011 σχετικά με την ενέργεια.", "expected_keys": ["Ν.4001/2011"]}
 {"id": "nu_dot_nospace", "format": "nu_dot", "text": "Καταργείται η παρ. 2 του Ν.4548/2018.", "expected_keys": ["Ν.4548/2018"]}
 {"id": "nu_word_genitive", "format": "nu_word", "text": "Σύμφωνα με τις διατάξεις του νόμου 4412/2016 περί δημοσίων συμβάσεων.", "expected_keys": ["Ν.4412/2016"]}
-{"id": "nu_word_nom", "format": "nu_word", "text": "Ο νόμος 5167/2024 ρυθμίζει θέματα φορολογίας.", "expected_keys": ["Ν.5167/2024"], "known_gap": "nominative 'νόμος' not in regex alternation (has νόμου?/νόμο/νόμοι/νόμων)"}
+{"id": "nu_word_nom", "format": "nu_word", "text": "Ο νόμος 5167/2024 ρυθμίζει θέματα φορολογίας.", "expected_keys": ["Ν.5167/2024"]}
 {"id": "nu_bare", "format": "nu_bare", "text": "Όπως ορίζει ο ν 3852/2010 για την αυτοδιοίκηση.", "expected_keys": ["Ν.3852/2010"]}
 {"id": "pd_dotted", "format": "pd", "text": "Με το Π.Δ. 56/2023 καθορίζονται οι λεπτομέρειες εφαρμογής.", "expected_keys": ["Π.Δ.56/2023"]}
 {"id": "pd_lower", "format": "pd", "text": "Αντικαθίσταται το άρθρο 3 του π.δ. 18/1989.", "expected_keys": ["Π.Δ.18/1989"]}
-{"id": "pd_word", "format": "pd_word", "text": "Δυνάμει του προεδρικού διατάγματος 80/2016.", "expected_keys": ["Π.Δ.80/2016"], "known_gap": "genitive 'προεδρικού διατάγματος' not matched (regex has only προεδρικ[όή] + διάταγμα(τος)?)"}
+{"id": "pd_word", "format": "pd_word", "text": "Δυνάμει του προεδρικού διατάγματος 80/2016.", "expected_keys": ["Π.Δ.80/2016"]}
 {"id": "pnp_dotted", "format": "pnp", "text": "Η Π.Ν.Π. 12/2024 κυρώθηκε με τον παρόντα νόμο.", "expected_keys": ["Π.Ν.Π.12/2024"]}
 {"id": "pnp_word", "format": "pnp_word", "text": "Με την πράξη νομοθετικού περιεχομένου 64/2020 ελήφθησαν έκτακτα μέτρα.", "expected_keys": ["Π.Ν.Π.64/2020"]}
 {"id": "ya_dotted", "format": "ya", "text": "Σύμφωνα με την υ.α. 99/2024 του Υπουργού Οικονομικών.", "expected_keys": ["Υ.Α.99/2024"]}

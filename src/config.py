@@ -43,8 +43,13 @@ class Settings(BaseSettings):
     chunk_tokens: int = 512
 
     top_k: int = 10
+    # RRF fusion weights. semantic is weighted 2× the lexical leg: once the FTS
+    # leg was actually firing (FINDINGS #3), the §2.4 ablation showed equal
+    # weighting let the weaker lexical leg drag down top-rank precision
+    # (doc@1 0.76→0.52); 1/2/50 strictly dominates 1/1/50 on every metric
+    # (doc@1 0.72, doc@10 0.94, exact@10 0.84, mrr 0.58). rrf_k is inert here.
     hybrid_full_text_weight: float = 1.0
-    hybrid_semantic_weight: float = 1.0
+    hybrid_semantic_weight: float = 2.0
     rrf_k: int = 50
 
     llm_temperature: float = 0.1

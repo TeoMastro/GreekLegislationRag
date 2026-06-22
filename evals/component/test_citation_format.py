@@ -17,10 +17,9 @@ from src.rag.agents.combiner_agent import _strip_invalid_citations
         ("Πρώτο [1], δεύτερο [2], τρίτο [3].", 3, "Πρώτο [1], δεύτερο [2], τρίτο [3]."),
         # out-of-range stripped, dangling space before punctuation repaired
         ("Ισχύει [5].", 3, "Ισχύει."),
-        # NOTE: stripping a mid-sentence citation leaves a double space — the
-        # function only collapses whitespace *before punctuation*, not internal.
-        # Locked as current behaviour (cosmetic; see findings).
-        ("Πηγές [1] και [9] το λένε.", 3, "Πηγές [1] και  το λένε."),
+        # stripping a mid-sentence citation also removes its leading space, so
+        # no double space is left behind (FINDINGS #6).
+        ("Πηγές [1] και [9] το λένε.", 3, "Πηγές [1] και το λένε."),
         # zero is out of range
         ("Δες [0].", 3, "Δες."),
         # no citations at all -> untouched
