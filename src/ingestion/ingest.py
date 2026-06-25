@@ -49,6 +49,50 @@ def _resolve_file(file: str) -> Path | None:
         return None
     return matches[0]
 
+def _write_skip_report(
+    year: int | None,
+    too_large: list[tuple[Path, int]],
+    no_text: list[Path],
+    failures: list[tuple[Path, str]],
+) -> None:
+    """Append this run's skipped/failed PDFs to downloads/.skipped.log.
+
+    A durable record (the terminal summary scrolls away on long runs). Each run
+    appends a timestamped block; nothing is written when nothing was skipped.
+    """
+    if not (too_large or no_text or failures):
+        return
+    from datetime import datetime
+
+    log = settings.downloads_dir / ".skipped.log"
+    scope = f"year={year}" if year is not None else "all years"
+    lines = [f"# {datetime.now().isoformat(timespec='seconds')}  ({scope})"]
+    for pdf, pages in too_large:
+        lines.append(f"too_large\t{pdf.name}\t{pages} pages")
+    for pdf in no_text:
+        lines.append(f"no_text\t{pdf.name}\timage-only / no extractable text")
+    for pdf, msg in failures:
+        lines.append(f"failure\t{pdf.name}\t{msg}")
+    lines.append("")
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        console.print(f"[dim]Skip/failure details appended to {log}[/dim]")
+    except OSError as e:
+        console.print(f"[yellow]Could not write skip log: {e}[/yellow]")
+
+
+def _page_count(pdf: Path) -> int | None:
+    """Cheap page count without OCR; None if the PDF can't be read."""
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(str(pdf)).pages)
+    except Exception:
+        return None
+
+
 def _extract(pdf: Path) -> tuple[list[dict], int]:
     doc = load_pdf(pdf)
     chunks = [c for c in chunk_document(doc) if c["text"] and c["text"].strip()]
@@ -215,6 +259,7 @@ def ingest(
 
     total_chunks = 0
     no_text: list[Path] = []
+    too_large: list[tuple[Path, int]] = []
     failures: list[tuple[Path, str]] = []
 
     with Progress(
@@ -228,6 +273,15 @@ def ingest(
         task = progress.add_task("Ingesting", total=len(pending))
         for pdf in pending:
             progress.update(task, description=f"Ingesting {pdf.name}")
+            pages = _page_count(pdf)
+            if pages is not None and pages > settings.max_pdf_pages:
+                console.print(
+                    f"[yellow]Skipping {pdf.name}: {pages} pages "
+                    f"(> {settings.max_pdf_pages} limit)[/yellow]"
+                )
+                too_large.append((pdf, pages))
+                progress.advance(task)
+                continue
             try:
                 n = process_pdf(pdf)
                 if n == 0:
@@ -238,11 +292,18 @@ def ingest(
                 failures.append((pdf, str(e)))
             progress.advance(task)
 
-    inserted_docs = len(pending) - len(failures) - len(no_text)
+    inserted_docs = len(pending) - len(failures) - len(no_text) - len(too_large)
     console.print(
         f"\n[green]Done.[/green] {total_chunks} chunks inserted from "
         f"{inserted_docs} PDFs."
     )
+    if too_large:
+        console.print(
+            f"[yellow]{len(too_large)} skipped (over "
+            f"{settings.max_pdf_pages}-page limit):[/yellow]"
+        )
+        for pdf, pages in too_large[:20]:
+            console.print(f"  - {pdf.name} ({pages} pages)")
     if no_text:
         console.print(
             f"[yellow]{len(no_text)} skipped (no extractable text — image-only PDFs):[/yellow]"
@@ -253,3 +314,5 @@ def ingest(
         console.print(f"[red]{len(failures)} failures:[/red]")
         for pdf, msg in failures[:20]:
             console.print(f"  - {pdf.name}: {msg}")
+
+    _write_skip_report(year, too_large, no_text, failures)

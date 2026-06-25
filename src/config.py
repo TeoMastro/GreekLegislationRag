@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # PDFs larger than this skip Mistral's inline upload (it rejects ~>50MB) and
     # go straight to the Tesseract fallback instead of failing slowly.
     mistral_max_pdf_mb: int = 50
+    # PDFs with more pages than this are skipped at ingest entirely: Mistral's OCR
+    # endpoint rejects them (~>1000 pages -> 400) and Tesseract on that many pages
+    # is impractical. Such PDFs are almost always born-digital bulk forms.
+    max_pdf_pages: int = 1000
     min_text_chars: int = 500
     min_chars_per_page: int = 200
     min_page_coverage: float = 0.5

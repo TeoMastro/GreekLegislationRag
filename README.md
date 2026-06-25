@@ -334,6 +334,63 @@ already processed and skips them. Citation rows dedup via a unique constraint
 on `(source_chunk_id, target_law_id, relation, target_article)`, so duplicate
 runs are safe but wasteful (use `--reprocess` only when intended).
 
+### Runbook: loading a year end-to-end
+
+This is the canonical order for getting a year's data fully in place with a
+correct citation graph. The ordering matters: **`sync-law-nodes` must run
+before `ingest`**, because the inline citation extractor skips any document
+whose source `law_node` doesn't exist yet (it prints `Run sync-law-nodes
+first` and ingests the chunks without edges).
+
+```bash
+# 0. (one time) populate law_nodes from downloads/listing-items-YYYY.md.
+#    Idempotent — re-running when nothing changed reports "upserted: 0,
+#    already present (skipped): N", which is the healthy steady state.
+python -m src.main sync-law-nodes
+
+# 1. Ingest the year. Resumable — already-ingested PDFs are skipped, so it
+#    stops once the year's folder is exhausted (it does NOT roll into other
+#    years). Runs OCR with Mistral primary + Tesseract fallback by default.
+python -m src.main ingest --year 2022
+
+# 2. Backfill edges for chunks ingested BEFORE law_nodes existed (safety net).
+#    Resumable: skips chunks that already have edges, so it's cheap to run
+#    even if step 1 already built them inline.
+python -m src.main extract-citations --year 2022
+
+# 3. Verify (see "Verifying the data is in place" below).
+python -m src.main stats
+```
+
+**Running years in parallel.** Different years touch disjoint PDFs and disjoint
+chunks, and every shared write (`law_nodes` stubs, `law_citations`,
+`chunk_processing_log`) is a conflict-safe idempotent upsert. So you can run
+`ingest --year 2022` and `ingest --year 2023` (or the matching
+`extract-citations` runs) in separate terminals at the same time. The only real
+ceilings are **external API rate limits** (2× the Mistral OCR + OpenAI embedding
+calls) and **local RAM** when files fall back to the local Tesseract/Docling
+path — watch memory on constrained machines and serialize if it thrashes.
+
+**Verifying the data is in place.**
+
+```bash
+# Chunk count + distinct PDFs + per-year breakdown. Compare the per-year PDF
+# count against the number of *.pdf files in downloads/<year>/ — equal means
+# the year is fully ingested.
+python -m src.main stats
+```
+
+A year is "good" when:
+- its PDF count in `stats` matches the file count in `downloads/<year>/`,
+- `sync-law-nodes` reports `upserted: 0` (every listing row already has a node),
+- `extract-citations --year <year>` completes with no `missing_source_law`
+  warnings (every cited source resolved to a node).
+
+> Harmless shutdown noise: commands may end with a
+> `ResourceTracker.__del__ ... '_thread.RLock' object has no attribute
+> '_recursion_count'` traceback. It fires *after* the work completes (a quirk of
+> the `multiprocess` dependency) and does not indicate failure.
+
 ### Stats / reset
 
 ```bash
