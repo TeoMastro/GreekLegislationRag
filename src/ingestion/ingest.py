@@ -84,10 +84,16 @@ def _write_skip_report(
 
 
 def _page_count(pdf: Path) -> int | None:
-    """Cheap page count without OCR; None if the PDF can't be read."""
-    try:
-        from pypdf import PdfReader
+    """Cheap page count without OCR; None if the PDF can't be read.
 
+    The ``pypdf`` import is deliberately outside the ``try`` so a missing
+    dependency raises loudly: if it were swallowed to ``None`` the page-cap
+    guard in ``ingest`` would silently disable, and oversized PDFs would reach
+    Mistral and 400 (which is exactly how this bit us before).
+    """
+    from pypdf import PdfReader
+
+    try:
         return len(PdfReader(str(pdf)).pages)
     except Exception:
         return None

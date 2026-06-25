@@ -1,5 +1,6 @@
 docling>=2.0
 ocrmypdf>=16.0
+pypdf>=5.0
 supabase>=2.7
 openai>=1.50
 tiktoken>=0.7
