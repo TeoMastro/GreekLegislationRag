@@ -1,19 +1,13 @@
 {
   "failures": [
     {
-      "field": "max_pages",
-      "got": 9,
-      "query": "νόμοι του 2022 με λιγότερες από 10 σελίδες",
-      "want": 10
-    },
-    {
       "field": "min_pages",
-      "got": 51,
-      "query": "ΦΕΚ Α 100/2024 με πάνω από 50 σελίδες",
-      "want": 50
+      "got": 100,
+      "query": "νόμοι του 2024 με πάνω από 100 σελίδες",
+      "want": 101
     }
   ],
-  "field_acc": 0.9412,
+  "field_acc": 0.9706,
   "fields_checked": 34,
   "keyword_recall": 1.0,
   "n": 12

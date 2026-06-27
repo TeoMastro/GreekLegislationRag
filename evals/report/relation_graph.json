@@ -1,6 +1,6 @@
 {
   "edge_recall_mean_over_fired": 1.0,
-  "n": 15,
+  "n": 20,
   "not_fired": [],
   "routing_fired_rate": 1.0
 }

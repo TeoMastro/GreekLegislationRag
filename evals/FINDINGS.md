@@ -8,6 +8,40 @@ Severity: 🔴 data loss / correctness · 🟠 quality/perf · 🟡 cosmetic / m
 
 ---
 
+## 🔴 12. Every full-corpus query timed out at 105k chunks (HNSW skipped on empty filter) — FIXED & VERIFIED
+
+Re-running the retrieval tier after the corpus doubled (57k → **105,441** chunks)
+returned `doc_recall@10 = 0.0` with a **100% `statement_timeout` (57014) rate** —
+every one of the 200 queries died at the ~8 s ceiling. Pure-semantic *and* hybrid
+both failed; only the scoped per-PDF path (`known_item`) survived.
+
+- **Cause:** `match_documents` and the hybrid semantic CTE carry `WHERE metadata
+  @> filter`, and unscoped callers pass `filter = '{}'`. `metadata @> '{}'` matches
+  every row and is GIN-indexable, so the planner built candidates from
+  `documents_metadata_idx` (all 105k rows) then did an **exact distance sort — the
+  HNSW index was never consulted**. This was always brute-force KNN; it merely fit
+  under the 8 s timeout at ~57k (old scale p50 4.8 s) and crossed it at 2×.
+  Proven by EXPLAIN: bare `ORDER BY embedding <=> q LIMIT 10` → Index Scan, 70 ms;
+  the same query + `WHERE metadata @> '{}'` → seq/bitmap scan, times out.
+  `ANALYZE documents` alone did **not** fix it (necessary for the bare-query plan,
+  but the WHERE is the structural blocker).
+- **Fixed** in `sql/005_hnsw_empty_filter.sql`: both RPCs rewritten in plpgsql with
+  explicit `IF filter = '{}'` branches — empty filter runs a WHERE-less query the
+  HNSW index serves; a real filter keeps the containment predicate (small candidate
+  set ⇒ fast exact sort, the path that always worked). NB a `WHERE filter='{}' OR
+  metadata @> filter` shortcut does **not** work: inside a cached plpgsql plan
+  `filter` is a runtime parameter the planner can't fold to a constant, so it stays
+  a runtime filter and brute-forces. Migration also re-asserts `service_role`
+  `statement_timeout = 60s` (001 set it but it was not in effect on the self-hosted
+  box — the role ran on the ~8 s default).
+- **Verified (online, 2026-06-26):** post-005 probe — unfiltered semantic 0.57 s,
+  full hybrid 3.86 s (cold), 0 timeouts. Retrieval tier: **timeout_rate 1.0 → 0.0**,
+  `doc_recall@10` **0.0 → 0.75** (n=200), `known_item` 1.0/1.0. Scale probe
+  unfiltered **p50 4.8 s → 0.98 s**.
+- **Harness hardened:** `test_retrieval_recall.py` now catches 57014 per-row, counts
+  it an evaluated doc-miss, and reports `timeouts` / `timeout_rate` — so a slow query
+  degrades the metric instead of aborting the whole 200-row run with zero data.
+
 ## 🔴 0. CombinerAgent crashed on every query (`max_tokens` rejected) — FIXED
 
 The first E2E run hit `openai.BadRequestError 400: 'max_tokens' is not supported
@@ -195,14 +229,16 @@ the residual misses are genuine embedding misses, which points back at the model
 - Also fix the FTS leg (#3) so a second, independent signal returns, then
   re-measure end-to-end with `ablation.py`.
 
-## 🟠 5. Retrieval latency ~5 s/query (p50 4.83 s, p95 5.48 s)
+## 🟠 5. Retrieval latency ~5 s/query (p50 4.83 s) — RESOLVED for unfiltered queries
 
-Measured by `scale/scale_probe.py` over 50 queries at 57k chunks (k=50). High
-already, and HNSW + remote round-trip both grow with the corpus.
+Originally measured at 57k chunks (k=50): p50 4.83 s. That number was the
+brute-force-KNN symptom of #12 — the unfiltered path never used HNSW. After
+`sql/005` restored HNSW on the empty-filter path, the scale probe at **105k**
+(2× the corpus) reports **unfiltered p50 0.98 s / p95 2.38 s** — a ~5× speedup
+despite the larger haystack. Filtered (scoped) latency is now the outlier; see #9.
 
-- **Fix / track:** watch the p50/p95 curve as the corpus grows; investigate HNSW
-  `ef_search`, connection reuse, and whether the self-hosted Supabase round-trip
-  dominates. Re-run the probe at each scale tier.
+- **Track:** watch the unfiltered p50/p95 curve at each scale tier; the remaining
+  cost is HNSW `ef_search` + the self-hosted Supabase round-trip.
 
 ## 🔴 8. RAM wall: the ~1M-chunk target won't fit in 8 GB
 
@@ -223,17 +259,21 @@ recall **doubles** the memory problem.
   `dimensions=1536` row to `embed_ablation.py` to see if reduced-dim large keeps the
   recall gain at flat storage.
 
-## 🟠 9. Year-filtered retrieval intermittently times out
+## 🟠 9. Year-filtered retrieval is now the latency bottleneck (~4.6 s p50)
 
-A `metadata @> {"year": …}` filtered query hit the DB statement timeout (`57014`)
-on the first probe run; a 10-query re-run had 0 timeouts at ~4.5 s each. pgvector
-HNSW **post-filters** (find neighbours, then drop non-matches), so the year filter
-can't use the vector index efficiently — latency sits near the timeout ceiling and
-will worsen at scale. The ChunkAgent uses this filter for `query --year`.
+A `metadata @> {"year": …}` filter does not get the #12 fix: the filter is
+non-empty, so `match_documents` takes the `else` branch and keeps the containment
+predicate. A **year** filter is not selective (a year is ~20k of 105k chunks), so
+the planner still does an exact distance sort over that large subset rather than
+using HNSW — pgvector HNSW post-filters and can't index a non-selective predicate
+efficiently. Scale probe at 105k: **filtered p50 4.6 s / p95 6.8 s** vs unfiltered
+0.98 s, **0 timeouts** (under the 60 s ceiling 005 restored, but uncomfortably high).
+Per-PDF scoped filters (`known_item`, ListingAgent) stay fast — that candidate set
+is tiny. So the problem is specifically *broad* filters like year.
 
-- **Fix (future):** a partial/composite index strategy for year-scoped search, or
-  pre-filtering via a year-partitioned table. Track filtered timeout rate in the
-  scale probe.
+- **Fix (future):** a partial/composite index per year, year-partitioned tables, or
+  raising HNSW `ef_search` with iterative-scan filtering (pgvector ≥0.8). Track
+  `latency_filtered_s` + `timeouts_filtered` in the scale probe at each tier.
 
 ## 🟠 7. Combiner occasionally over-claims beyond its sources
 
@@ -321,5 +361,9 @@ collapsed whitespace *before punctuation*, not internal.
   by capping `--per-source` and forbidding self-referential/table-lookup questions
   in the generator prompt. Grow the set and add a few **real** user queries before
   ratcheting the recall floors up.
-- **Corpus context for these numbers:** 57,268 chunks, years 2022 (89%) + 2023
-  (11%) only.
+- **Corpus context for these numbers:** as of 2026-06-26, **105,441 chunks across
+  5 years** (2022–2026); the citation graph holds 1,861 law_nodes / 24,081 edges.
+  Gold sets were regenerated to span all 5 years (synthetic 200 rows, known_item 25,
+  relation_graph_truth 20). Findings predating the doubling were measured on the old
+  57,268-chunk / 2022–23 corpus — the pre-doubling sets are kept under
+  `evals/datasets/_backup_predouble/`.

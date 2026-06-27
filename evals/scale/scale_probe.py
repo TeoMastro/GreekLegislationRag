@@ -149,7 +149,7 @@ def main() -> None:
     _console.print(t)
     _console.print(
         "[dim]Note: RAM figures are raw float32 vectors only; the HNSW graph adds "
-        "~1.5–3× on top, and 8 GB total must also hold Postgres + OS.[/dim]"
+        "~1.5-3x on top, and 8 GB total must also hold Postgres + OS.[/dim]"
     )
 
 

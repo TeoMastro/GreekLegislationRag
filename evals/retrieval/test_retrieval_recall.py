@@ -47,6 +47,8 @@ def test_retrieval_recall(capsys):
     from src.ingestion.embedder import embed_texts
     from src.retrieval.store import hybrid_search
 
+    from postgrest.exceptions import APIError
+
     rows = [json.loads(l) for l in DATASET.read_text(encoding="utf-8").splitlines() if l.strip()]
     assert rows, "empty synthetic gold set"
 
@@ -56,6 +58,10 @@ def test_retrieval_recall(capsys):
     rr_sum = 0.0
     ndcg_sum = 0.0
     evaluated = 0
+    # statement_timeout (57014) on the hybrid RPC is itself a tracked signal post-
+    # corpus-doubling: a slow query is a recall miss for the user, not a reason to
+    # abort the whole tier. Count it as an evaluated doc-miss and record the query.
+    timeouts: list[str] = []
 
     for r in rows:
         target = int(r["chunk_id"])
@@ -63,7 +69,14 @@ def test_retrieval_recall(capsys):
         emb = embed_texts([r["question"]])
         if not emb:
             continue
-        results = hybrid_search(query_text=r["question"], query_embedding=emb[0], match_count=K)
+        try:
+            results = hybrid_search(query_text=r["question"], query_embedding=emb[0], match_count=K)
+        except APIError as e:
+            if getattr(e, "code", None) == "57014" or "statement timeout" in str(e).lower():
+                timeouts.append(r["question"])
+                evaluated += 1  # a timeout is a real miss, not a skip
+                continue
+            raise
         ids = [int(d["id"]) for d in results if d.get("id") is not None]
         srcs = [(d.get("metadata") or {}).get("source") for d in results]
         evaluated += 1
@@ -87,6 +100,8 @@ def test_retrieval_recall(capsys):
     n = evaluated or 1
     report = {
         "n": evaluated,
+        "timeouts": len(timeouts),
+        "timeout_rate": round(len(timeouts) / n, 4),
         "doc_recall@1": round(doc_hits[1] / n, 4),
         "doc_recall@5": round(doc_hits[5] / n, 4),
         "doc_recall@10": round(doc_hits[10] / n, 4),
@@ -99,5 +114,9 @@ def test_retrieval_recall(capsys):
     write_report("retrieval_recall.json", report)
     with capsys.disabled():
         print("\n[retrieval]", report)
+        if timeouts:
+            print(f"[retrieval] {len(timeouts)} statement_timeout(s) on hybrid RPC:")
+            for q in timeouts:
+                print(f"    - {q}")
 
     assert report["doc_recall@10"] >= MIN_DOC_RECALL_AT_10, report
